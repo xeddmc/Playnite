@@ -128,22 +128,25 @@ namespace Playnite.Providers.Steam
 
         public List<IGame> GetLibraryGames(string userName)
         {
-            if (string.IsNullOrEmpty(userName))
+            var api = new WebApiClient();
+            if (api.GetLoginRequired())
             {
-                throw new Exception("Steam user name cannot be empty.");
+                throw new Exception("User is not logged in.");
             }
 
             var games = new List<IGame>();
-            var importedGames = (new ServicesClient()).GetSteamLibrary(userName);
-            if (importedGames == null)
-            {
-                throw new Exception("No games found on specified Steam account.");
-            }
+            var importedGames = api.GetOwnedGames();
 
             foreach (var game in importedGames)
             {
                 // Ignore games without name, like 243870
                 if (string.IsNullOrEmpty(game.name))
+                {
+                    continue;
+                }
+
+                // Ignore DLCs and other stuff like that
+                if (game.client_summary.state == "no_remote")
                 {
                     continue;
                 }

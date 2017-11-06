@@ -43,7 +43,36 @@ namespace Playnite.Providers.Steam
 
         public Response response;
     }
-        
+
+    public class PrivateLibraryGame
+    {
+        public class AvailableStatLinks
+        {
+            public bool achievements;
+            public bool global_achievements;
+            public bool stats;
+            public bool leaderboards;
+            public bool global_leaderboards;
+        }
+
+        public class ClientSummary
+        {
+            public string state;
+            public string status;
+            public string localContentSize;
+        }
+
+        public int appid;
+        public string name;
+        public string logo;
+        public object friendlyURL;
+        public AvailableStatLinks availStatLinks;
+        public string hours;
+        public string hours_forever;
+        public long last_played;
+        public ClientSummary client_summary;
+    }
+
     public class GetOwnedGamesResult
     {
         public class Game
