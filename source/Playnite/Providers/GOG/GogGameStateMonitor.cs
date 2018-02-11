@@ -13,6 +13,7 @@ namespace Playnite.Providers.GOG
         private static Logger logger = LogManager.GetCurrentClassLogger();
 
         public event EventHandler GameUninstalled;
+        //public event EventHandler GameStopped;
 
         public event GameInstalledEventHandler GameInstalled
         {

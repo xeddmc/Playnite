@@ -160,6 +160,16 @@ namespace Playnite.Models
             get; set;
         }
 
+        bool IsSetupInProgress
+        {
+            get; set;
+        }
+
+        bool IsRunning
+        {
+            get; set;
+        }
+
         bool IsInstalled
         {
             get;

@@ -14,6 +14,8 @@ namespace Playnite.Providers
 
     public interface IGameStateMonitor : IDisposable
     {
+        //event EventHandler GameStopped;
+
         event EventHandler GameUninstalled;
 
         event GameInstalledEventHandler GameInstalled;

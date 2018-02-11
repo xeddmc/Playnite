@@ -408,8 +408,6 @@ namespace Playnite.Models
         }
 
         private bool isSetupInProgress = false;
-        [JsonIgnore]
-        [BsonIgnore]
         public bool IsSetupInProgress
         {
             get
@@ -421,6 +419,21 @@ namespace Playnite.Models
             {
                 isSetupInProgress = value;
                 OnPropertyChanged("IsSetupInProgress");
+            }
+        }
+
+        private bool isRunning = false;
+        public bool IsRunning
+        {
+            get
+            {
+                return isRunning;
+            }
+
+            set
+            {
+                isRunning = value;
+                OnPropertyChanged("IsRunning");
             }
         }
 

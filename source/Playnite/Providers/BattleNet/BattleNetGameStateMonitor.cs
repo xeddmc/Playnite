@@ -20,6 +20,7 @@ namespace Playnite.Providers.BattleNet
 
         public event EventHandler GameUninstalled;
         public event GameInstalledEventHandler GameInstalled;
+        //public event EventHandler GameStopped;
 
         public BattleNetGameStateMonitor(BattleNetLibrary.BNetApp app, IBattleNetLibrary library)
         {

@@ -20,6 +20,7 @@ namespace Playnite.Providers.Uplay
 
         public event EventHandler GameUninstalled;
         public event GameInstalledEventHandler GameInstalled;
+        //public event EventHandler GameStopped;
 
         public UplayGameStateMonitor(string id, IUplayLibrary uplayLibrary)
         {

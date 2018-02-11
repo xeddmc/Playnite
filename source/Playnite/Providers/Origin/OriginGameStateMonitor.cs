@@ -17,6 +17,7 @@ namespace Playnite.Providers.Origin
         public event EventHandler GameUninstalled;
 
         public event GameInstalledEventHandler GameInstalled;
+        //public event EventHandler GameStopped;
 
         private IOriginLibrary library;
 

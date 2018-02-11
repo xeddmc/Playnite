@@ -15,8 +15,8 @@ namespace Playnite.Providers.Steam
         private static Logger logger = LogManager.GetCurrentClassLogger();
 
         public event EventHandler GameUninstalled;
-
         public event GameInstalledEventHandler GameInstalled;
+        //public event EventHandler GameStopped;
 
         private List<FileSystemWatcher> watchers;
 
