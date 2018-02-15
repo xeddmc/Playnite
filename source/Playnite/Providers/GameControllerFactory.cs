@@ -1,11 +1,10 @@
-﻿using Playnite.Providers;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Playnite
+namespace Playnite.Providers
 {
     public class GameState
     {
@@ -30,27 +29,26 @@ namespace Playnite
         }
     }
 
-    public class GameStatesFactory : IDisposable
+    public class GameControllerFactory : IDisposable
     {
+        private List<IGameController> controllers;
 
-        private List<IGameStateMonitor> monitors;
-
-        public GameStatesFactory()
+        public GameControllerFactory()
         {
-            monitors = new List<IGameStateMonitor>();
+            controllers = new List<IGameController>();
         }
 
-        public void AddGameMonitor(IGameStateMonitor monitor)
+        public void AddController(IGameController monitor)
         {
 
         }
 
         public void Dispose()
         {
-            foreach (var monitor in monitors)
+            foreach (var controller in controllers)
             {
-                monitor.StopMonitoring();
-                monitor.Dispose();
+                //controller.StopMonitoring();
+                //controller.Dispose();
             }
         }
     }

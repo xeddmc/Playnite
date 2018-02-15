@@ -463,7 +463,7 @@ namespace Playnite.Models
             {
                 case Provider.Steam:
                     Process.Start(@"steam://install/" + ProviderId);
-                    RegisterStateMonitor(new SteamGameStateMonitor(ProviderId, new SteamLibrary()), GameStateMonitorType.Install);
+                    RegisterStateMonitor(new SteamGameController(ProviderId, new SteamLibrary()), GameStateMonitorType.Install);
                     break;
                 case Provider.GOG:
                     Process.Start(@"goggalaxy://openGameView/" + ProviderId);
@@ -525,7 +525,7 @@ namespace Playnite.Models
             {
                 case Provider.Steam:
                     Process.Start("steam://uninstall/" + ProviderId);
-                    RegisterStateMonitor(new SteamGameStateMonitor(ProviderId, new SteamLibrary()), GameStateMonitorType.Uninstall);
+                    RegisterStateMonitor(new SteamGameController(ProviderId, new SteamLibrary()), GameStateMonitorType.Uninstall);
                     break;
                 case Provider.GOG:
                     var uninstaller = Path.Combine(InstallDirectory, "unins000.exe");
