@@ -1,4 +1,5 @@
 ﻿using Playnite.Controls;
+using Playnite.SDK;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -17,11 +18,9 @@ using System.Windows.Shapes;
 
 namespace Playnite.FullscreenApp.Windows
 {
-    public partial class MessageBoxWindow : WindowBase, INotifyPropertyChanged
+    public partial class MessageBoxWindow : WindowBase
     {
         private MessageBoxResult result;
-
-        public event PropertyChangedEventHandler PropertyChanged;
 
         private string text = string.Empty;
         public string Text
@@ -89,7 +88,6 @@ namespace Playnite.FullscreenApp.Windows
             }
         }
 
-
         private bool showInputField = false;
         public bool ShowInputField
         {
@@ -128,11 +126,6 @@ namespace Playnite.FullscreenApp.Windows
             InitializeComponent();
         }
 
-        public void OnPropertyChanged([CallerMemberName]string name = null)
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-        }
-
         public MessageBoxResult Show(Window owner, string messageBoxText, string caption, MessageBoxButton button, MessageBoxImage icon, MessageBoxResult defaultResult, MessageBoxOptions options)
         {
             if (owner == null)
@@ -148,8 +141,7 @@ namespace Playnite.FullscreenApp.Windows
             Height = owner.Height;
             Width = owner.Width;
             result = defaultResult;
-            Text = messageBoxText;
-            Caption = caption;
+            SetStrings(messageBoxText, caption);
             DisplayIcon = icon;
 
             switch (button)
@@ -186,6 +178,27 @@ namespace Playnite.FullscreenApp.Windows
 
             ShowDialog();
             return result;
+        }
+
+        private void SetStrings(string messageText, string messageCaption)
+        {
+            if (messageText?.StartsWith("LOC") == true)
+            {
+                Text = ResourceProvider.GetString(messageText);
+            }
+            else
+            {
+                Text = messageText;
+            }
+
+            if (messageCaption?.StartsWith("LOC") == true)
+            {
+                Caption = ResourceProvider.GetString(messageCaption);
+            }
+            else
+            {
+                Caption = messageCaption;
+            }
         }
 
         private void ButtonOK_Click(object sender, RoutedEventArgs e)

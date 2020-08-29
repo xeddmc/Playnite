@@ -13,16 +13,10 @@ using Playnite.SDK;
 using System.Windows.Media;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
+using Steam;
 
 namespace SteamLibrary
 {
-    public enum BackgroundSource
-    {
-        Image,
-        StoreScreenshot,
-        StoreBackground
-    }
-
     public enum AuthStatus
     {
         Ok,
@@ -40,6 +34,8 @@ namespace SteamLibrary
         private IPlayniteAPI api;
 
         #region Settings
+
+        public int Version { get; set; }
 
         public string UserName { get; set; } = string.Empty;
 
@@ -69,7 +65,11 @@ namespace SteamLibrary
             }
         }
 
+        public bool DownloadVerticalCovers { get; set; } = true;
+
         public bool ImportInstalledGames { get; set; } = true;
+
+        public bool ConnectAccount { get; set; } = false;
 
         public bool ImportUninstalledGames { get; set; } = false;
 
@@ -85,7 +85,7 @@ namespace SteamLibrary
                 if (UserId.IsNullOrEmpty())
                 {
                     return AuthStatus.AuthRequired;
-                }                    
+                }
 
                 try
                 {
@@ -145,7 +145,7 @@ namespace SteamLibrary
         }
 
         [JsonIgnore]
-        public bool ShowCategoryImport { get; set; }
+        public bool IsFirstRunUse { get; set; }
 
         [JsonIgnore]
         public List<LocalSteamUser> SteamUsers { get; set; }
@@ -180,8 +180,18 @@ namespace SteamLibrary
             var settings = library.LoadPluginSettings<SteamLibrarySettings>();
             if (settings != null)
             {
+                if (settings.Version == 0)
+                {
+                    logger.Debug("Updating Steam settings from version 0.");
+                    if (settings.ImportUninstalledGames)
+                    {
+                        settings.ConnectAccount = true;
+                    }
+                }
+
+                settings.Version = 1;
                 LoadValues(settings);
-            }            
+            }
         }
 
         public void BeginEdit()
@@ -201,6 +211,12 @@ namespace SteamLibrary
 
         public bool VerifySettings(out List<string> errors)
         {
+            if (IsPrivateAccount && ApiKey.IsNullOrEmpty())
+            {
+                errors = new List<string>{ "Steam API key must be specified when using private accounts!" };
+                return false;
+            }
+
             errors = null;
             return true;
         }
@@ -255,7 +271,7 @@ namespace SteamLibrary
                         }
                     };
 
-                    view.DeleteCookies(@"steamcommunity.com", null);
+                    view.DeleteDomainCookies(".steamcommunity.com");
                     view.Navigate(@"https://steamcommunity.com/login/home/?goto=");
                     view.OpenDialog();
                 }

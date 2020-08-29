@@ -23,27 +23,133 @@ using Playnite.Windows;
 using System.Drawing.Imaging;
 using Playnite.DesktopApp.Windows;
 using Playnite.SDK.Plugins;
+using Playnite.Metadata.Providers;
+using System.Text.RegularExpressions;
+using Playnite.Common.Media.Icons;
 
 namespace Playnite.DesktopApp.ViewModels
 {
     public class GameEditViewModel : ObservableObject
     {
+        public class MetadataDownloadOption
+        {
+            private IDialogsFactory dialogs;
+            private IResourceProvider resources;
+            private GameEditViewModel editModel;
+
+            public object Downloader { get; set; }
+
+            public string Name { get; set; }
+
+            public RelayCommand<object> DownloadCommand
+            {
+                get => new RelayCommand<object>((a) =>
+                {
+                    if (Downloader is MetadataPlugin plugin)
+                    {
+                        editModel.DownloadPluginData(plugin);
+                    }
+                    else if (Downloader is LibraryMetadataProvider provider)
+                    {
+                        editModel.DownloadStoreData();
+                    }
+                });
+            }
+
+            public MetadataDownloadOption(GameEditViewModel model, IDialogsFactory dialogs, IResourceProvider resources)
+            {
+                this.dialogs = dialogs;
+                this.resources = resources;
+                editModel = model;
+            }
+
+            public override string ToString()
+            {
+                return Name ?? base.ToString();
+            }
+        }
+
         private static ILogger logger = LogManager.GetLogger();
         private IWindowFactory window;
         private IDialogsFactory dialogs;
         private IResourceProvider resources;
+        private IPlayniteAPI playniteApi;
         private GameDatabase database;
         private ExtensionFactory extensions;
+        private PlayniteSettings appSettings;
+
+        public string IconMetadata
+        {
+            get => GetImageProperties(EditingGame.Icon)?.Item1;
+        }
+
+        public string CoverMetadata
+        {
+            get => GetImageProperties(EditingGame.CoverImage)?.Item1;
+        }
+
+        public string BackgroundMetadata
+        {
+            get => GetImageProperties(EditingGame.BackgroundImage)?.Item1;
+        }
+
+        public bool IsIconTooLage
+        {
+            get
+            {
+                var props = GetImageProperties(EditingGame.Icon);
+                if (props != null)
+                {
+                    return Sizes.GetMegapixelsFromRes(props.Item2) > GameDatabase.MaximumRecommendedIconSize;
+                }
+
+                return false;
+            }
+        }
+
+        public bool IsCoverTooLage
+        {
+            get
+            {
+                var props = GetImageProperties(EditingGame.CoverImage);
+                if (props != null)
+                {
+                    return Sizes.GetMegapixelsFromRes(props.Item2) > GameDatabase.MaximumRecommendedCoverSize;
+                }
+
+                return false;
+            }
+        }
+
+        public bool IsBackgroundTooLage
+        {
+            get
+            {
+                var props = GetImageProperties(EditingGame.BackgroundImage);
+                if (props != null)
+                {
+                    return Sizes.GetMegapixelsFromRes(props.Item2) > GameDatabase.MaximumRecommendedBackgroundSize;
+                }
+
+                return false;
+            }
+        }
+
+        public object IconImageObject => ImageSourceManager.GetImage(EditingGame.Icon, false, new BitmapLoadProperties(256, 256));
+        public object CoverImageObject => ImageSourceManager.GetImage(EditingGame.CoverImage, false, new BitmapLoadProperties(900, 900));
+        public object BackgroundImageObject => ImageSourceManager.GetImage(EditingGame.BackgroundImage, false, new BitmapLoadProperties(1920, 1080));
 
         #region Database fields
 
-        public SelectableDbItemList Genres { get; set; } 
+        public SelectableDbItemList Genres { get; set; }
 
         public SelectableDbItemList Developers { get; set; }
 
         public SelectableDbItemList Publishers { get; set; }
 
         public SelectableDbItemList Tags { get; set; }
+
+        public SelectableDbItemList Features { get; set; }
 
         public SelectableDbItemList Categories { get; set; }
 
@@ -140,6 +246,14 @@ namespace Playnite.DesktopApp.ViewModels
             get => new RelayCommand<object>((a) =>
             {
                 AddNewTag();
+            });
+        }
+
+        public RelayCommand<object> AddFeatureCommand
+        {
+            get => new RelayCommand<object>((a) =>
+            {
+                AddNewFeature();
             });
         }
 
@@ -291,6 +405,22 @@ namespace Playnite.DesktopApp.ViewModels
             }
         }
 
+        private bool useFeatureChanges;
+        public bool UseFeatureChanges
+        {
+            get
+            {
+                return useFeatureChanges;
+            }
+
+            set
+            {
+                useFeatureChanges = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ShowGeneralChangeNotif));
+            }
+        }
+
         private bool useDescriptionChanges;
         public bool UseDescriptionChanges
         {
@@ -398,6 +528,22 @@ namespace Playnite.DesktopApp.ViewModels
             set
             {
                 useLinksChanges = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ShowLinksChangeNotif));
+            }
+        }
+
+        private bool useScriptChanges;
+        public bool UseScriptChanges
+        {
+            get
+            {
+                return useScriptChanges;
+            }
+
+            set
+            {
+                useScriptChanges = value;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(ShowLinksChangeNotif));
             }
@@ -658,6 +804,7 @@ namespace Playnite.DesktopApp.ViewModels
                     UsePublisherChanges ||
                     UseSortingNameChanges ||
                     UseTagChanges ||
+                    UseFeatureChanges ||
                     UseLastActivityChanges ||
                     UsePlaytimeChanges ||
                     UseAddedChanges ||
@@ -720,34 +867,14 @@ namespace Playnite.DesktopApp.ViewModels
             }
         }
 
-        private Game game;
         public Game Game
         {
-            get
-            {
-                return game;
-            }
-
-            set
-            {
-                game = value;
-                OnPropertyChanged();
-            }
+            get; set;
         }
 
-        private IEnumerable<Game> games;
         public IEnumerable<Game> Games
         {
-            get
-            {
-                return games;
-            }
-
-            set
-            {
-                games = value;
-                OnPropertyChanged();
-            }
+            get; set;
         }
 
         private bool progressVisible = false;
@@ -810,7 +937,7 @@ namespace Playnite.DesktopApp.ViewModels
         {
             get
             {
-                return EditingGame == null || EditingGame.BackgroundImage == null ? false : EditingGame.BackgroundImage.IsHttpUrl();
+                return EditingGame?.BackgroundImage?.IsHttpUrl() == true;
             }
         }
 
@@ -854,30 +981,22 @@ namespace Playnite.DesktopApp.ViewModels
             get;
         }
 
-        public bool IsOfficialMetadataAvailable
+        public bool IsOfficialMetadataAvailable => LibraryPluginMetadataDownloader != null;
+
+        public List<MetadataDownloadOption> MetadataDownloadOptions
         {
-            get
-            {
-                if (IsMultiGameEdit)
-                {
-                    return false;
-                }
-
-                if (Game.IsCustomGame)
-                {
-                    return false;
-                }
-
-                if (extensions.Plugins.TryGetValue(game.PluginId, out var plugin))
-                {
-                    return ((LibraryPlugin)plugin.Plugin).GetMetadataDownloader() != null;
-                }
-
-                return false;
-            }
+            get; set;
         }
 
-        public LibraryPlugin LibraryPlugin => extensions?.LibraryPlugins?.FirstOrDefault(a => a.Id == game?.PluginId);
+        public LibraryPlugin LibraryPlugin
+        {
+            get; set;
+        }
+
+        public LibraryMetadataProvider LibraryPluginMetadataDownloader
+        {
+            get; set;
+        }
 
         public RelayCommand<object> ConfirmCommand
         {
@@ -911,11 +1030,35 @@ namespace Playnite.DesktopApp.ViewModels
             });
         }
 
+        public RelayCommand<DragEventArgs> DropIconCommand
+        {
+            get => new RelayCommand<DragEventArgs>((args) =>
+            {
+                DropIcon(args);
+            });
+        }
+
+        public RelayCommand<DragEventArgs> DropCoverCommand
+        {
+            get => new RelayCommand<DragEventArgs>((args) =>
+            {
+                DropCover(args);
+            });
+        }
+
         public RelayCommand<object> SelectCoverCommand
         {
             get => new RelayCommand<object>((a) =>
             {
                 SelectCover();
+            });
+        }
+
+        public RelayCommand<DragEventArgs> DropBackgroundCommand
+        {
+            get => new RelayCommand<DragEventArgs>((args) =>
+            {
+                DropBackground(args);
             });
         }
 
@@ -932,6 +1075,22 @@ namespace Playnite.DesktopApp.ViewModels
             get => new RelayCommand<object>((a) =>
             {
                 SetBackgroundUrl();
+            });
+        }
+
+        public RelayCommand<object> SetIconUrlCommand
+        {
+            get => new RelayCommand<object>((a) =>
+            {
+                SetIconUrl();
+            });
+        }
+
+        public RelayCommand<object> SetCoverUrlCommand
+        {
+            get => new RelayCommand<object>((a) =>
+            {
+                SetCoverUrl();
             });
         }
 
@@ -1015,32 +1174,6 @@ namespace Playnite.DesktopApp.ViewModels
             });
         }
 
-        public RelayCommand<object> DownloadIGDBMetadataCommand
-        {
-            get => new RelayCommand<object>((a) =>
-            {
-                var model = new MetadataLookupViewModel(MetadataProvider.IGDB, new MetadataLookupWindowFactory(), dialogs, resources);
-                DoMetadataLookup(model);
-            });
-        }
-
-        public RelayCommand<object> DownloadWikiMetadataCommand
-        {
-            get => new RelayCommand<object>((a) =>
-            {
-                var model = new MetadataLookupViewModel(MetadataProvider.Wiki, new MetadataLookupWindowFactory(), dialogs, resources);
-                DoMetadataLookup(model);
-            });
-        }
-
-        public RelayCommand<object> DownloadStoreCommand
-        {
-            get => new RelayCommand<object>((a) =>
-            {
-                DownloadStoreData();
-            });
-        }
-
         public RelayCommand<object> RemoveIconCommand
         {
             get => new RelayCommand<object>((a) =>
@@ -1073,13 +1206,39 @@ namespace Playnite.DesktopApp.ViewModels
             });
         }
 
+        public RelayCommand<object> SelectGoogleIconCommand
+        {
+            get => new RelayCommand<object>((a) =>
+            {
+                SelectGoogleIcon();
+            });
+        }
+
+        public RelayCommand<object> SelectGoogleCoverCommand
+        {
+            get => new RelayCommand<object>((a) =>
+            {
+                SelectGoogleCover();
+            });
+        }
+
+        public RelayCommand<object> SelectGoogleBackgroundCommand
+        {
+            get => new RelayCommand<object>((a) =>
+            {
+                SelectGoogleBackground();
+            });
+        }
+
         public GameEditViewModel(
             Game game,
             GameDatabase database,
             IWindowFactory window,
             IDialogsFactory dialogs,
             IResourceProvider resources,
-            ExtensionFactory extensions)
+            ExtensionFactory extensions,
+            IPlayniteAPI playniteApi,
+            PlayniteSettings appSettings)
         {
             Game = game.GetClone();
             IsSingleGameEdit = true;
@@ -1090,7 +1249,7 @@ namespace Playnite.DesktopApp.ViewModels
             ShowLinks = true;
             ShowActions = true;
             ShowInstallation = true;
-            Init(database, window, dialogs, resources, extensions);
+            Init(database, window, dialogs, resources, extensions, playniteApi, appSettings);
         }
 
         public GameEditViewModel(
@@ -1099,7 +1258,9 @@ namespace Playnite.DesktopApp.ViewModels
             IWindowFactory window,
             IDialogsFactory dialogs,
             IResourceProvider resources,
-            ExtensionFactory extensions)
+            ExtensionFactory extensions,
+            IPlayniteAPI playniteApi,
+            PlayniteSettings appSettings)
         {
             Games = games.Select(a => a.GetClone()).ToList();
             IsSingleGameEdit = false;
@@ -1110,7 +1271,7 @@ namespace Playnite.DesktopApp.ViewModels
             ShowLinks = false;
             ShowActions = false;
             ShowInstallation = false;
-            Init(database, window, dialogs, resources, extensions, EditingGame as MultiEditGame);
+            Init(database, window, dialogs, resources, extensions, playniteApi, appSettings, EditingGame as MultiEditGame);
         }
 
         private void Init(
@@ -1119,6 +1280,8 @@ namespace Playnite.DesktopApp.ViewModels
             IDialogsFactory dialogs,
             IResourceProvider resources,
             ExtensionFactory extensions,
+            IPlayniteAPI playniteApi,
+            PlayniteSettings appSettings,
             MultiEditGame multiEditData = null)
         {
             this.database = database;
@@ -1126,12 +1289,14 @@ namespace Playnite.DesktopApp.ViewModels
             this.dialogs = dialogs;
             this.resources = resources;
             this.extensions = extensions;
+            this.playniteApi = playniteApi;
+            this.appSettings = appSettings;
 
             EditingGame.PropertyChanged += EditingGame_PropertyChanged;
 
             Genres = new SelectableDbItemList(database.Genres, EditingGame.GenreIds, multiEditData?.DistinctGenreIds);
             Genres.SelectionChanged += (s, e) => { EditingGame.GenreIds = ((SelectableDbItemList)s).GetSelectedIds(); };
-            
+
             Developers = new SelectableDbItemList(database.Companies, EditingGame.DeveloperIds, multiEditData?.DistinctDeveloperIds);
             Developers.SelectionChanged += (s, e) => { EditingGame.DeveloperIds = ((SelectableDbItemList)s).GetSelectedIds(); };
 
@@ -1144,8 +1309,11 @@ namespace Playnite.DesktopApp.ViewModels
             Tags = new SelectableDbItemList(database.Tags, EditingGame.TagIds, multiEditData?.DistinctTagIds);
             Tags.SelectionChanged += (s, e) => { EditingGame.TagIds = ((SelectableDbItemList)s).GetSelectedIds(); };
 
+            Features = new SelectableDbItemList(database.Features, EditingGame.FeatureIds, multiEditData?.DistinctFeatureIds);
+            Features.SelectionChanged += (s, e) => { EditingGame.FeatureIds = ((SelectableDbItemList)s).GetSelectedIds(); };
+
             Sources = database.Sources.OrderBy(a => a.Name).ToObservable();
-            Sources.Insert(0, new GameSource() { Id = Guid.Empty, Name = string.Empty }); 
+            Sources.Insert(0, new GameSource() { Id = Guid.Empty, Name = string.Empty });
 
             Regions = database.Regions.OrderBy(a => a.Name).ToObservable();
             Regions.Insert(0, new Region() { Id = Guid.Empty, Name = string.Empty });
@@ -1160,6 +1328,39 @@ namespace Playnite.DesktopApp.ViewModels
             Platforms.Insert(0, new Platform() { Id = Guid.Empty, Name = string.Empty });
 
             Emulators = database.Emulators.OrderBy(a => a.Name).ToList();
+
+            if (IsSingleGameEdit)
+            {
+                MetadataDownloadOptions = new List<MetadataDownloadOption>();
+                if (extensions?.MetadataPlugins != null)
+                {
+                    foreach (var plugin in extensions.MetadataPlugins)
+                    {
+                        MetadataDownloadOptions.Add(new MetadataDownloadOption(this, dialogs, resources)
+                        {
+                            Downloader = plugin,
+                            Name = plugin.Name
+                        });
+                    }
+                }
+
+                MetadataDownloadOptions.Add(new MetadataDownloadOption(this, dialogs, resources)
+                {
+                    Downloader = new WikipediaMetadataPlugin(playniteApi),
+                    Name = "Wikipedia"
+                });
+
+                LibraryPlugin = extensions?.LibraryPlugins?.FirstOrDefault(a => a.Id == Game?.PluginId);
+                LibraryPluginMetadataDownloader = LibraryPlugin?.GetMetadataDownloader();
+                if (LibraryPluginMetadataDownloader != null)
+                {
+                    MetadataDownloadOptions.Add(new MetadataDownloadOption(this, dialogs, resources)
+                    {
+                        Downloader = LibraryPluginMetadataDownloader,
+                        Name = resources.GetString("LOCMetaSourceStore")
+                    });
+                }
+            }
         }
 
         private void EditingGame_PropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -1197,6 +1398,9 @@ namespace Playnite.DesktopApp.ViewModels
                     }
                     break;
                 case nameof(Game.CoverImage):
+                    OnPropertyChanged(nameof(CoverMetadata));
+                    OnPropertyChanged(nameof(IsCoverTooLage));
+                    OnPropertyChanged(nameof(CoverImageObject));
                     if (IsSingleGameEdit)
                     {
                         UseImageChanges = Game.CoverImage != EditingGame.CoverImage;
@@ -1207,6 +1411,9 @@ namespace Playnite.DesktopApp.ViewModels
                     }
                     break;
                 case nameof(Game.BackgroundImage):
+                    OnPropertyChanged(nameof(BackgroundMetadata));
+                    OnPropertyChanged(nameof(IsBackgroundTooLage));
+                    OnPropertyChanged(nameof(BackgroundImageObject));
                     if (IsSingleGameEdit)
                     {
                         UseBackgroundChanges = Game.BackgroundImage != EditingGame.BackgroundImage;
@@ -1219,6 +1426,9 @@ namespace Playnite.DesktopApp.ViewModels
                     OnPropertyChanged(nameof(ShowBackgroundUrl));
                     break;
                 case nameof(Game.Icon):
+                    OnPropertyChanged(nameof(IconMetadata));
+                    OnPropertyChanged(nameof(IsIconTooLage));
+                    OnPropertyChanged(nameof(IconImageObject));
                     if (IsSingleGameEdit)
                     {
                         UseIconChanges = Game.Icon != EditingGame.Icon;
@@ -1286,6 +1496,16 @@ namespace Playnite.DesktopApp.ViewModels
                     else
                     {
                         UseTagChanges = true;
+                    }
+                    break;
+                case nameof(Game.FeatureIds):
+                    if (IsSingleGameEdit)
+                    {
+                        UseFeatureChanges = !Game.FeatureIds.IsListEqual(EditingGame.FeatureIds);
+                    }
+                    else
+                    {
+                        UseFeatureChanges = true;
                     }
                     break;
                 case nameof(Game.GenreIds):
@@ -1478,6 +1698,18 @@ namespace Playnite.DesktopApp.ViewModels
                         UseHiddenChanges = true;
                     }
                     break;
+                case nameof(Game.PreScript):
+                case nameof(Game.PostScript):
+                case nameof(Game.ActionsScriptLanguage):
+                    if (IsSingleGameEdit)
+                    {
+                        UseScriptChanges = GetScriptActionsChanged();
+                    }
+                    else
+                    {
+                        UseScriptChanges = true;
+                    }
+                    break;
             }
         }
 
@@ -1486,31 +1718,11 @@ namespace Playnite.DesktopApp.ViewModels
             return window.CreateAndOpenDialog(this);
         }
 
-        public void CloseView()
+        public void CloseView(bool? result = false)
         {
-            try
-            {
-                if (Path.GetDirectoryName(EditingGame.Icon) == PlaynitePaths.TempPath)
-                {
-                    FileSystem.DeleteFile(EditingGame.Icon);
-                }
-
-                if (Path.GetDirectoryName(EditingGame.CoverImage) == PlaynitePaths.TempPath)
-                {
-                    FileSystem.DeleteFile(EditingGame.CoverImage);
-                }
-
-                if (Path.GetDirectoryName(EditingGame.BackgroundImage) == PlaynitePaths.TempPath)
-                {
-                    FileSystem.DeleteFile(EditingGame.BackgroundImage);
-                }
-            }
-            catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
-            {
-                logger.Error(e, "Failed to cleanup temporary files.");
-            }
-
-            window.Close(false);
+            CleanupTempFiles();
+            LibraryPluginMetadataDownloader?.Dispose();
+            window.Close(result);
         }
 
         public void ConfirmDialog()
@@ -1533,7 +1745,7 @@ namespace Playnite.DesktopApp.ViewModels
                 {
                     return null;
                 }
-            }                
+            }
 
             if (UseNameChanges)
             {
@@ -1649,7 +1861,6 @@ namespace Playnite.DesktopApp.ViewModels
                 }
                 else
                 {
-
                     Game.CategoryIds = EditingGame.CategoryIds;
                 }
             }
@@ -1667,6 +1878,22 @@ namespace Playnite.DesktopApp.ViewModels
                 else
                 {
                     Game.TagIds = EditingGame.TagIds;
+                }
+            }
+
+            if (UseFeatureChanges)
+            {
+                AddNewItemsToDb(Features, EditingGame.FeatureIds, database.Features);
+                if (IsMultiGameEdit)
+                {
+                    foreach (var game in Games)
+                    {
+                        game.FeatureIds = consolidateIds(Features, game.FeatureIds);
+                    }
+                }
+                else
+                {
+                    Game.FeatureIds = EditingGame.FeatureIds;
                 }
             }
 
@@ -1973,12 +2200,7 @@ namespace Playnite.DesktopApp.ViewModels
                     }
                     else
                     {
-                        Game.Icon = database.AddFile(EditingGame.Icon, game.Id); ;
-                    }
-
-                    if (Path.GetDirectoryName(EditingGame.Icon) == PlaynitePaths.TempPath)
-                    {
-                        FileSystem.DeleteFile(EditingGame.Icon);
+                        Game.Icon = database.AddFile(EditingGame.Icon, Game.Id); ;
                     }
                 }
             }
@@ -2011,11 +2233,6 @@ namespace Playnite.DesktopApp.ViewModels
                     else
                     {
                         Game.CoverImage = database.AddFile(EditingGame.CoverImage, Game.Id);
-                    }
-
-                    if (Path.GetDirectoryName(EditingGame.CoverImage) == PlaynitePaths.TempPath)
-                    {
-                        FileSystem.DeleteFile(EditingGame.CoverImage);
                     }
                 }
             }
@@ -2071,12 +2288,26 @@ namespace Playnite.DesktopApp.ViewModels
                         {
                             Game.BackgroundImage = database.AddFile(EditingGame.BackgroundImage, Game.Id);
                         }
-
-                        if (Path.GetDirectoryName(EditingGame.BackgroundImage) == PlaynitePaths.TempPath)
-                        {
-                            FileSystem.DeleteFile(EditingGame.BackgroundImage);
-                        }
                     }
+                }
+            }
+
+            if (UseScriptChanges)
+            {
+                if (IsMultiGameEdit)
+                {
+                    foreach (var game in Games)
+                    {
+                        game.ActionsScriptLanguage = EditingGame.ActionsScriptLanguage;
+                        game.PreScript = EditingGame.PreScript;
+                        game.PostScript = EditingGame.PostScript;
+                    }
+                }
+                else
+                {
+                    Game.ActionsScriptLanguage = EditingGame.ActionsScriptLanguage;
+                    Game.PreScript = EditingGame.PreScript;
+                    Game.PostScript = EditingGame.PostScript;
                 }
             }
 
@@ -2117,15 +2348,42 @@ namespace Playnite.DesktopApp.ViewModels
             }
             else
             {
-                game.Modified = DateTime.Today;
+                Game.Modified = DateTime.Today;
                 database.Games.Update(Game);
             }
 
-            window.Close(true);
+            CloseView(true);
+        }
+
+        internal void CleanupTempFiles()
+        {
+            try
+            {
+                if (Path.GetDirectoryName(EditingGame.Icon) == PlaynitePaths.TempPath)
+                {
+                    FileSystem.DeleteFile(EditingGame.Icon);
+                }
+
+                if (Path.GetDirectoryName(EditingGame.CoverImage) == PlaynitePaths.TempPath)
+                {
+                    FileSystem.DeleteFile(EditingGame.CoverImage);
+                }
+
+                if (Path.GetDirectoryName(EditingGame.BackgroundImage) == PlaynitePaths.TempPath)
+                {
+                    FileSystem.DeleteFile(EditingGame.BackgroundImage);
+                }
+            }
+            catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
+            {
+                logger.Error(e, "Failed to cleanup temporary files.");
+            }
         }
 
         public void PreviewGameData(GameMetadata metadata)
         {
+            ShowCheckBoxes = true;
+
             if (!string.IsNullOrEmpty(metadata.GameInfo.Name))
             {
                 EditingGame.Name = metadata.GameInfo.Name;
@@ -2149,6 +2407,11 @@ namespace Playnite.DesktopApp.ViewModels
             if (metadata.GameInfo.Tags?.HasNonEmptyItems() == true)
             {
                 AddNewTags(metadata.GameInfo.Tags);
+            }
+
+            if (metadata.GameInfo.Features?.HasNonEmptyItems() == true)
+            {
+                AddNewFeatures(metadata.GameInfo.Features);
             }
 
             if (!metadata.GameInfo.AgeRating.IsNullOrEmpty())
@@ -2262,20 +2525,16 @@ namespace Playnite.DesktopApp.ViewModels
 
         private string SaveFileIconToTemp(string exePath)
         {
-            var ico = System.Drawing.IconExtension.ExtractIconFromExe(exePath, true);
-            if (ico == null)
+            var tempPath = Path.Combine(PlaynitePaths.TempPath, "tempico.ico");
+            FileSystem.PrepareSaveFile(tempPath);
+            if (IconExtractor.ExtractMainIconFromFile(exePath, tempPath))
+            {
+                return tempPath;
+            }
+            else
             {
                 return string.Empty;
             }
-
-            var tempPath = Path.Combine(PlaynitePaths.TempPath, "tempico.png");
-            if (ico != null)
-            {
-                FileSystem.PrepareSaveFile(tempPath);
-                ico.ToBitmap().Save(tempPath, ImageFormat.Png);
-            }
-
-            return tempPath;
         }
 
         private string SaveConvertedTgaToTemp(string tgaPath)
@@ -2284,6 +2543,87 @@ namespace Playnite.DesktopApp.ViewModels
             FileSystem.PrepareSaveFile(tempPath);
             File.WriteAllBytes(tempPath, BitmapExtensions.TgaToBitmap(tgaPath).ToPngArray());
             return tempPath;
+        }
+
+        public void UseExeIcon()
+        {
+            if (EditingGame.PlayAction == null || EditingGame.PlayAction.Type == GameActionType.URL)
+            {
+                dialogs.ShowMessage(resources.GetString("LOCExecIconMissingPlayAction"));
+                return;
+            }
+
+            var path = Game.GetRawExecutablePath();
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                logger.Error($"Can't find executable for icon extraction, file {path}");
+                return;
+            }
+
+            var icon = SaveFileIconToTemp(path);
+            if (string.IsNullOrEmpty(icon))
+            {
+                return;
+            }
+
+            EditingGame.Icon = icon;
+        }
+
+        public string PrepareImagePath(string path)
+        {
+            if (!string.IsNullOrEmpty(path))
+            {
+                if (path.IsHttpUrl())
+                {
+                    path = ProcessMetadataFile(new MetadataFile(path));
+                }
+
+                if (!path.IsNullOrEmpty() && path.EndsWith(".tga", StringComparison.OrdinalIgnoreCase))
+                {
+                    path = SaveConvertedTgaToTemp(path);
+                }
+
+                return path;
+            }
+
+            return null;
+        }
+
+        public string GetDroppedImage(DragEventArgs args)
+        {
+            if (args.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                var files = (string[])args.Data.GetData(DataFormats.FileDrop);
+                if (files?.Length == 1)
+                {
+                    var path = files[0];
+                    if (File.Exists(path) && new List<string> { ".bmp", ".jpg", ".jpeg", ".png", ".gif", ".tga", ".exe" }.Contains(Path.GetExtension(path).ToLower()))
+                    {
+                        return path;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        public void DropIcon(DragEventArgs args)
+        {
+            var path = PrepareImagePath(GetDroppedImage(args));
+            if (!path.IsNullOrEmpty())
+            {
+                if (path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    path = SaveFileIconToTemp(path);
+                    if (string.IsNullOrEmpty(path))
+                    {
+                        return;
+                    }
+                }
+
+                EditingGame.Icon = path;
+                CheckImagePerformanceRestrains(path, 512);
+            }
         }
 
         public void SelectIcon()
@@ -2305,86 +2645,94 @@ namespace Playnite.DesktopApp.ViewModels
                 }
 
                 EditingGame.Icon = path;
+                CheckImagePerformanceRestrains(path, GameDatabase.MaximumRecommendedIconSize);
             }
-        }
-
-        public void UseExeIcon()
-        {
-            if (EditingGame.PlayAction == null || EditingGame.PlayAction.Type == GameActionType.URL)
-            {
-                dialogs.ShowMessage(resources.GetString("LOCExecIconMissingPlayAction"));
-                return;
-            }
-
-            var path = game.GetRawExecutablePath();
-            if (string.IsNullOrEmpty(path) || !File.Exists(path))
-            {
-                logger.Error($"Can't find executable for icon extraction, file {path}");
-                return;
-            }
-
-            var icon = SaveFileIconToTemp(path);
-            if (string.IsNullOrEmpty(icon))
-            {
-                return;
-            }
-
-            EditingGame.Icon = icon;
         }
 
         public void SelectCover()
         {
-            var path = dialogs.SelectImagefile();
-            if (!string.IsNullOrEmpty(path))
+            var path = PrepareImagePath(dialogs.SelectImagefile());
+            if (path != null)
             {
-                if (path.EndsWith(".tga", StringComparison.OrdinalIgnoreCase))
-                {
-                    path = SaveConvertedTgaToTemp(path);
-                }
-
                 EditingGame.CoverImage = path;
+                CheckImagePerformanceRestrains(path, GameDatabase.MaximumRecommendedCoverSize);
+            }
+        }
+
+        public void DropCover(DragEventArgs args)
+        {
+            var path = PrepareImagePath(GetDroppedImage(args));
+            if (!path.IsNullOrEmpty())
+            {
+                EditingGame.CoverImage = path;
+                CheckImagePerformanceRestrains(path, GameDatabase.MaximumRecommendedCoverSize);
             }
         }
 
         public void SelectBackground()
         {
-            var path = dialogs.SelectImagefile();
-            if (!string.IsNullOrEmpty(path))
+            var path = PrepareImagePath(dialogs.SelectImagefile());
+            if (!path.IsNullOrEmpty())
             {
-                if (path.EndsWith(".tga", StringComparison.OrdinalIgnoreCase))
-                {
-                    path = SaveConvertedTgaToTemp(path);
-                }
+                EditingGame.BackgroundImage = path;
+            }
+        }
 
+        public void DropBackground(DragEventArgs args)
+        {
+            var path = PrepareImagePath(GetDroppedImage(args));
+            if (!path.IsNullOrEmpty())
+            {
                 EditingGame.BackgroundImage = path;
             }
         }
 
         public void SetBackgroundUrl()
         {
+            var image = SelectUrlImage();
+            if (!image.IsNullOrEmpty())
+            {
+                EditingGame.BackgroundImage = image;
+            }
+        }
+
+        public void SetIconUrl()
+        {
+            var image = SelectUrlImage();
+            if (!image.IsNullOrEmpty())
+            {
+                EditingGame.Icon = image;
+            }
+        }
+
+        public void SetCoverUrl()
+        {
+            var image = SelectUrlImage();
+            if (!image.IsNullOrEmpty())
+            {
+                EditingGame.CoverImage = image;
+            }
+        }
+
+        public string SelectUrlImage()
+        {
             var url = dialogs.SelectString(
                 resources.GetString("LOCURLInputInfo"),
                 resources.GetString("LOCURLInputInfoTitile"),
                 string.Empty);
-
-            if (url.Result)
+            if (url.Result && !url.SelectedString.IsNullOrEmpty())
             {
-                if (url.SelectedString.IsHttpUrl())
+                try
                 {
-                    if (HttpDownloader.GetResponseCode(url.SelectedString) == HttpStatusCode.OK)
-                    {
-                        EditingGame.BackgroundImage = url.SelectedString;
-                    }
-                    else
-                    {
-                        dialogs.ShowErrorMessage(resources.GetString("LOCDownloadError"), string.Empty);
-                    }
+                    return PrepareImagePath(url.SelectedString);
                 }
-                else
+                catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
                 {
-                    dialogs.ShowErrorMessage(resources.GetString("LOCInvalidURL"), string.Empty);
+                    logger.Error(e, $"Failed to download image from url {url.SelectedString}");
                 }
             }
+
+            return null;
         }
 
         public void AddPlayAction()
@@ -2494,21 +2842,64 @@ namespace Playnite.DesktopApp.ViewModels
             EditingGame.BackgroundImage = null;
         }
 
-        public void DoMetadataLookup(MetadataLookupViewModel model)
+        public async void DownloadPluginData(MetadataPlugin plugin)
         {
-            if (string.IsNullOrEmpty(EditingGame.Name))
+            ProgressVisible = true;
+
+            await Task.Run(() =>
             {
-                dialogs.ShowMessage(resources.GetString("LOCEmptyGameNameMetaSearchError"), "", MessageBoxButton.OK);
-                return;
-            }
-            
-            model.SearchTerm = EditingGame.Name;
-            if (model.OpenView() == true)
-            {
-                ShowCheckBoxes = true;
-                PreviewGameData(model.MetadataData);
-            }
-        }       
+                try
+                {
+                    var provider = plugin.GetMetadataProvider(new MetadataRequestOptions(EditingGame, false));
+                    if (provider != null)
+                    {
+                        try
+                        {
+                            var gameInfo = new GameInfo
+                            {
+                                Name = provider.GetName(),
+                                Genres = provider.GetGenres(),
+                                ReleaseDate = provider.GetReleaseDate(),
+                                Developers = provider.GetDevelopers(),
+                                Publishers = provider.GetPublishers(),
+                                Tags = provider.GetTags(),
+                                Features = provider.GetFeatures(),
+                                Description = provider.GetDescription(),
+                                Links = provider.GetLinks(),
+                                CriticScore = provider.GetCriticScore(),
+                                CommunityScore = provider.GetCommunityScore()
+                            };
+
+                            var metadata = new GameMetadata
+                            {
+                                GameInfo = gameInfo,
+                                Icon = provider.GetIcon(),
+                                CoverImage = provider.GetCoverImage(),
+                                BackgroundImage = provider.GetBackgroundImage()
+                            };
+
+                            Application.Current.Dispatcher.Invoke(() => PreviewGameData(metadata));
+                        }
+                        finally
+                        {
+                            provider.Dispose();
+                        }
+                    }
+                }
+                catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
+                {
+                    logger.Error(exc, string.Format("Failed to download metadata, {0}, {1}", Game.PluginId, Game.GameId));
+                    dialogs.ShowMessage(
+                        string.Format(resources.GetString("LOCMetadataDownloadError"), exc.Message),
+                        resources.GetString("LOCDownloadError"),
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                finally
+                {
+                    ProgressVisible = false;
+                }
+            });
+        }
 
         public async void DownloadStoreData()
         {
@@ -2518,10 +2909,9 @@ namespace Playnite.DesktopApp.ViewModels
             {
                 try
                 {
-                    if (extensions.Plugins.TryGetValue(game.PluginId, out var plugin))
-                    {                        
-                        var downloader = ((LibraryPlugin)plugin.Plugin).GetMetadataDownloader();
-                        if (downloader == null)
+                    if (extensions.Plugins.TryGetValue(Game.PluginId, out var plugin))
+                    {
+                        if (LibraryPluginMetadataDownloader == null)
                         {
                             dialogs.ShowErrorMessage(
                                 resources.GetString("LOCErrorNoMetadataDownloader"),
@@ -2529,17 +2919,10 @@ namespace Playnite.DesktopApp.ViewModels
                             return;
                         }
 
-                        try
+                        var metadata = LibraryPluginMetadataDownloader.GetMetadata(EditingGame);
+                        if (metadata != null)
                         {
-                            var metadata = downloader.GetMetadata(EditingGame);
-                            if (metadata != null)
-                            {
-                                Application.Current.Dispatcher.Invoke(() => PreviewGameData(metadata));
-                            }
-                        }
-                        finally
-                        {
-                            downloader.Dispose();
+                            Application.Current.Dispatcher.Invoke(() => PreviewGameData(metadata));
                         }
                     }
                     else
@@ -2549,12 +2932,10 @@ namespace Playnite.DesktopApp.ViewModels
                             resources.GetString("LOCGameError"));
                         return;
                     }
-
-                    ShowCheckBoxes = true;
                 }
                 catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
                 {
-                    logger.Error(exc, string.Format("Failed to download metadata, {0}, {1}", game.PluginId, game.GameId));
+                    logger.Error(exc, string.Format("Failed to download metadata, {0}, {1}", Game.PluginId, Game.GameId));
                     dialogs.ShowMessage(
                         string.Format(resources.GetString("LOCMetadataDownloadError"), exc.Message),
                         resources.GetString("LOCDownloadError"),
@@ -2579,7 +2960,7 @@ namespace Playnite.DesktopApp.ViewModels
                 return;
             }
 
-            var addedItems = sourceList.Where(a => itemsToAdd.Contains(a.Item.Id) == true && targetCollection[a.Item.Id] == null);
+            var addedItems = sourceList.Where(a => itemsToAdd.Contains(a.Item.Id) == true && targetCollection[a.Item.Id] == null).ToList();
             if (addedItems.Any())
             {
                 targetCollection.Add(addedItems.Select(a => (TItem)a.Item));
@@ -2599,7 +2980,7 @@ namespace Playnite.DesktopApp.ViewModels
                 targetCollection.Add(addedItem);
             }
         }
-        
+
         public TItem CreateNewItem<TItem>(string itemName = null) where TItem : DatabaseObject
         {
             if (itemName.IsNullOrEmpty())
@@ -2643,7 +3024,10 @@ namespace Playnite.DesktopApp.ViewModels
             }
         }
 
-        public TItem CreateNewItemInCollection<TItem>(SelectableDbItemList collection, string itemName = null) where TItem : DatabaseObject
+        public TItem CreateNewItemInCollection<TItem>(
+            SelectableDbItemList collection,
+            string itemName = null,
+            Func<SelectableItem<DatabaseObject>, string, bool> existingComparer = null) where TItem : DatabaseObject
         {
             var newItem = CreateNewItem<TItem>(itemName);
             if (newItem == null)
@@ -2652,7 +3036,16 @@ namespace Playnite.DesktopApp.ViewModels
             }
             else
             {
-                var existing = collection.FirstOrDefault(a => a.Item.Name.Equals(newItem.Name, StringComparison.InvariantCultureIgnoreCase));
+                SelectableItem<DatabaseObject> existing = null;
+                if (existingComparer != null)
+                {
+                    existing = collection.FirstOrDefault(a => existingComparer(a, newItem.Name));
+                }
+                else
+                {
+                    existing = collection.FirstOrDefault(a => a.Item.Name.Equals(newItem.Name, StringComparison.InvariantCultureIgnoreCase));
+                }
+
                 if (existing != null)
                 {
                     existing.Selected = true;
@@ -2696,7 +3089,7 @@ namespace Playnite.DesktopApp.ViewModels
             CreateNewItemInCollection<Category>(Categories);
         }
 
-        public void AddNewPublisher(string publisher = null)
+        public Company AddNewPublisher(string publisher = null)
         {
             var newItem = CreateNewItemInCollection<Company>(Publishers, publisher);
             if (newItem != null)
@@ -2706,14 +3099,21 @@ namespace Playnite.DesktopApp.ViewModels
                     Developers.Add(newItem);
                 }
             }
+
+            return newItem;
         }
 
         public void AddNewPublishers(List<string> publishers)
         {
-            publishers?.ForEach(a => AddNewPublisher(a));
+            var added = new List<Company>();
+            publishers?.ForEach(a => added.Add(AddNewPublisher(a)));
+            if (added.Any())
+            {
+                Publishers.SetSelection(added.Select(a => a.Id).ToList());
+            }
         }
 
-        public void AddNewDeveloper(string developer = null)
+        public Company AddNewDeveloper(string developer = null)
         {
             var newItem = CreateNewItemInCollection<Company>(Developers, developer);
             if (newItem != null)
@@ -2723,31 +3123,197 @@ namespace Playnite.DesktopApp.ViewModels
                     Publishers.Add(newItem);
                 }
             }
+
+            return newItem;
         }
 
         public void AddNewDevelopers(List<string> developers)
         {
-            developers?.ForEach(a => AddNewDeveloper(a));
+            var added = new List<Company>();
+            developers?.ForEach(a => added.Add(AddNewDeveloper(a)));
+            if (added.Any())
+            {
+                Developers.SetSelection(added.Select(a => a.Id).ToList());
+            }
         }
 
-        public void AddNewGenre(string genre = null)
+        public Genre AddNewGenre(string genre = null)
         {
-            CreateNewItemInCollection<Genre>(Genres, genre);
+            return CreateNewItemInCollection<Genre>(Genres, genre, LooseDbNameComparer);
         }
 
         public void AddNewGenres(List<string> genres)
         {
-            genres?.ForEach(a => AddNewGenre(a));
+            var added = new List<Genre>();
+            genres?.ForEach(a => added.Add(AddNewGenre(a)));
+            if (added.Any())
+            {
+                Genres.SetSelection(added.Select(a => a.Id).ToList());
+            }
         }
 
-        public void AddNewTag(string tag = null)
+        public Tag AddNewTag(string tag = null)
         {
-            CreateNewItemInCollection<Tag>(Tags, tag);
+            return CreateNewItemInCollection<Tag>(Tags, tag, LooseDbNameComparer);
         }
 
         public void AddNewTags(List<string> tags)
         {
-            tags?.ForEach(a => AddNewTag(a));
+            var added = new List<Tag>();
+            tags?.ForEach(a => added.Add(AddNewTag(a)));
+            if (added.Any())
+            {
+                Tags.SetSelection(added.Select(a => a.Id).ToList());
+            }
+        }
+
+        public GameFeature AddNewFeature(string feature = null)
+        {
+            return CreateNewItemInCollection<GameFeature>(Features, feature, LooseDbNameComparer);
+        }
+
+        public void AddNewFeatures(List<string> features)
+        {
+            var added = new List<GameFeature>();
+            features?.ForEach(a => added.Add(AddNewFeature(a)));
+            if (added.Any())
+            {
+                Features.SetSelection(added.Select(a => a.Id).ToList());
+            }
+        }
+
+        private bool LooseDbNameComparer(SelectableItem<DatabaseObject> existingItem, string newName)
+        {
+            return string.Equals(
+                Regex.Replace(existingItem.Item.Name, @"[\s-]", ""),
+                Regex.Replace(newName, @"[\s-]", ""), StringComparison.OrdinalIgnoreCase);
+        }
+
+        public bool GetScriptActionsChanged()
+        {
+            if (Game.ActionsScriptLanguage != EditingGame.ActionsScriptLanguage)
+            {
+                return true;
+            }
+
+            if (!string.Equals(Game.PreScript, EditingGame.PreScript, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (!string.Equals(Game.PostScript, EditingGame.PostScript, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private Tuple<string, ImageProperties> GetImageProperties(string image)
+        {
+            try
+            {
+                var imagePath = ImageSourceManager.GetImagePath(image);
+                if (!imagePath.IsNullOrEmpty())
+                {
+                    var props = Images.GetImageProperties(imagePath);
+                    return new Tuple<string, ImageProperties>($"{props?.Width}x{props.Height}px", props);
+                }
+                else
+                {
+                    return null;
+                }
+            }
+            catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
+            {
+                logger.Error(e, $"Failed to get metadata from image  {image}");
+                return null;
+            }
+        }
+
+        private void CheckImagePerformanceRestrains(string imagePath, double maxMegapixels)
+        {
+            if (!appSettings.ShowImagePerformanceWarning)
+            {
+                return;
+            }
+
+            if (imagePath != null)
+            {
+                var imageProps = Images.GetImageProperties(imagePath);
+                if (imageProps != null && Sizes.GetMegapixelsFromRes(imageProps) > maxMegapixels)
+                {
+                    var ask = new MessageBoxWindow();
+                    var result = ask.ShowCustom(
+                        window.Window,
+                        string.Format(resources.GetString("LOCGameImageSizeWarning"),
+                        GameDatabase.MaximumRecommendedIconSize,
+                        GameDatabase.MaximumRecommendedCoverSize,
+                        GameDatabase.MaximumRecommendedBackgroundSize),
+                        resources.GetString("LOCPerformanceWarningTitle"),
+                        MessageBoxImage.Warning,
+                        new List<object> { true, false },
+                        new List<string>
+                        {
+                        resources.GetString("LOCOKLabel"),
+                        resources.GetString("LOCDontShowAgainTitle")
+                        });
+                    if ((result as bool?) == false)
+                    {
+                        appSettings.ShowImagePerformanceWarning = false;
+                    }
+                }
+            }
+        }
+
+        public void SelectGoogleIcon()
+        {
+            var image = SelectGoogleImage($"{EditingGame.Name} icon", 128, 128);
+            if (!image.IsNullOrEmpty())
+            {
+                EditingGame.Icon = image;
+            }
+        }
+
+        public void SelectGoogleCover()
+        {
+            var image = SelectGoogleImage($"{EditingGame.Name} cover");
+            if (!image.IsNullOrEmpty())
+            {
+                EditingGame.CoverImage = image;
+            }
+        }
+
+        public void SelectGoogleBackground()
+        {
+            var image = SelectGoogleImage($"{EditingGame.Name} wallpaper");
+            if (!image.IsNullOrEmpty())
+            {
+                EditingGame.BackgroundImage = image;
+            }
+        }
+
+        public string SelectGoogleImage(string searchTerm, double imageWidth = 0, double imageHeight = 0)
+        {
+            var model = new GoogleImageDownloadViewModel(
+                new GoogleImageDownloadWindowFactory(),
+                resources,
+                searchTerm,
+                imageWidth,
+                imageHeight);
+            if (model.OpenView() == true)
+            {
+                try
+                {
+                    return PrepareImagePath(model.SelectedImage?.ImageUrl);
+                }
+                catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
+                {
+                    logger.Error(e, $"Failed to use google image {model.SelectedImage?.ImageUrl}.");
+                }
+            }
+
+            return null;
         }
     }
 }

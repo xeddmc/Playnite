@@ -2,6 +2,7 @@
 using Playnite.Common;
 using Playnite.DesktopApp.ViewModels;
 using Playnite.Extensions.Markup;
+using Playnite.Plugins;
 using Playnite.SDK;
 using Playnite.ViewModels;
 using System;
@@ -24,6 +25,7 @@ namespace Playnite.DesktopApp.Controls
     public class MainMenu : ContextMenu
     {
         private readonly DesktopAppViewModel mainModel;
+        private MenuItem extensionsItem;
 
         static MainMenu()
         {
@@ -43,7 +45,16 @@ namespace Playnite.DesktopApp.Controls
             else if (model != null)
             {
                 mainModel = model;
+                mainModel.Extensions.PropertyChanged += Extensions_PropertyChanged;
                 InitializeItems();
+            }
+        }
+
+        private void Extensions_PropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(ExtensionFactory.ExportedFunctions))
+            {
+                InitializeExtensionsMenu();
             }
         }
 
@@ -86,10 +97,32 @@ namespace Playnite.DesktopApp.Controls
                 {
                     item.Icon = textIcon;
                 }
-            }            
+            }
 
             parent.Add(item);
             return item;
+        }
+
+        private void InitializeExtensionsMenu()
+        {
+            // Can be called from other thread via Extensions_PropertyChanged event hook
+            Dispatcher.Invoke(() =>
+            {
+                extensionsItem.Items.Clear();
+                AddMenuChild(extensionsItem.Items, "LOCReloadScripts", mainModel.ReloadScriptsCommand);
+                extensionsItem.Items.Add(new Separator());
+                foreach (var function in mainModel.Extensions.ExportedFunctions)
+                {
+                    var item = new MenuItem
+                    {
+                        Header = function.Name,
+                        Command = mainModel.InvokeExtensionFunctionCommand,
+                        CommandParameter = function
+                    };
+
+                    extensionsItem.Items.Add(item);
+                }
+            });
         }
 
         public void InitializeItems()
@@ -129,20 +162,8 @@ namespace Playnite.DesktopApp.Controls
             }
 
             // Extensions
-            var extensionsItem = AddMenuChild(Items, "LOCExtensions", null);
-            AddMenuChild(extensionsItem.Items, "LOCReloadScripts", mainModel.ReloadScriptsCommand);
-            extensionsItem.Items.Add(new Separator());
-            foreach (var function in mainModel.Extensions.ExportedFunctions)
-            {
-                var item = new MenuItem
-                {
-                    Header = function.Name,
-                    Command = mainModel.InvokeExtensionFunctionCommand,
-                    CommandParameter = function
-                };
-
-                extensionsItem.Items.Add(item);
-            }
+            extensionsItem = AddMenuChild(Items, "LOCExtensions", null);
+            InitializeExtensionsMenu();
 
             // Open Client
             var openClientItem = AddMenuChild(Items, "LOCMenuOpenClient", null);
@@ -163,6 +184,8 @@ namespace Playnite.DesktopApp.Controls
                 openClientItem.Items.Add(item);
             }
 
+            // Random game select
+            AddMenuChild(Items, "LOCMenuSelectRandomGame", mainModel.SelectRandomGameCommand, null, ResourceProvider.GetResource("DiceIcon"));
 
             // Settings
             AddMenuChild(Items, "LOCMenuPlayniteSettingsTitle", mainModel.OpenSettingsCommand, null, ResourceProvider.GetResource("SettingsIcon"));
@@ -170,20 +193,20 @@ namespace Playnite.DesktopApp.Controls
             // FullScreen
             Items.Add(new Separator());
             AddMenuChild(Items, "LOCMenuOpenFullscreen", mainModel.OpenFullScreenCommand, null, ResourceProvider.GetResource("FullscreenModeIcon"));
-            Items.Add(new Separator());            
+            Items.Add(new Separator());
 
             // Links
-            var linksItem = AddMenuChild(Items, "LOCMenuLinksTitle", null);            
+            var linksItem = AddMenuChild(Items, "LOCMenuLinksTitle", null);
+            AddMenuChild(linksItem.Items, "LOCCommonLinksForum", GlobalCommands.NavigateUrlCommand, UrlConstants.Forum, "Images/applogo.png");
             AddMenuChild(linksItem.Items, "Discord", GlobalCommands.NavigateUrlCommand, UrlConstants.Discord, "Images/discord.png");
             AddMenuChild(linksItem.Items, "Twitter", GlobalCommands.NavigateUrlCommand, UrlConstants.Twitter, "Images/twitter.png");
-            AddMenuChild(linksItem.Items, "Reddit", GlobalCommands.NavigateUrlCommand, UrlConstants.Reddit, "Images/reddit.png");            
 
             // Help
-            var helpItem = AddMenuChild(Items, "LOCMenuHelpTitle", null);            
+            var helpItem = AddMenuChild(Items, "LOCMenuHelpTitle", null);
             AddMenuChild(helpItem.Items, "Wiki / FAQ", GlobalCommands.NavigateUrlCommand, UrlConstants.Wiki);
             AddMenuChild(helpItem.Items, "LOCMenuIssues", mainModel.ReportIssueCommand);
             AddMenuChild(helpItem.Items, "LOCSDKDocumentation", GlobalCommands.NavigateUrlCommand, UrlConstants.SdkDocs);
-            
+
             // Patreon
             AddMenuChild(Items, "LOCMenuPatreonSupport", GlobalCommands.NavigateUrlCommand, UrlConstants.Patreon, "Images/patreon.png");
 
@@ -191,7 +214,6 @@ namespace Playnite.DesktopApp.Controls
 
             // About
             AddMenuChild(Items, "LOCMenuAbout", mainModel.OpenAboutCommand, null, ResourceProvider.GetResource("AboutPlayniteIcon"));
-
 
             // Check for update
             AddMenuChild(Items, "LOCCheckForUpdates", mainModel.CheckForUpdateCommand);

@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Playnite.SDK.Models;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -12,20 +13,28 @@ namespace Playnite.API
     {
         GenericPlugin,
         GameLibrary,
-        Script
+        Script,
+        MetadataProvider
     }
 
-    public class ExtensionDescription
+    public class BaseExtensionDescription
     {
-        public string DescriptionPath { get; set; }
-
-        public string FolderName { get; set; }
-
         public string Name { get; set; }
 
         public string Author { get; set; }
 
         public string Version { get; set; }
+
+        public List<Link> Links { get; set; }
+    }
+
+    public class ExtensionDescription : BaseExtensionDescription
+    {
+        [YamlIgnore]
+        public string DescriptionPath { get; set; }
+
+        [YamlIgnore]
+        public string FolderName { get; set; }
 
         public string Module { get; set; }
 

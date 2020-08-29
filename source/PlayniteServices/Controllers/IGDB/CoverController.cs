@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
+using PlayniteServices.Filters;
 using PlayniteServices.Models.IGDB;
 using System;
 using System.Collections.Generic;
@@ -10,14 +11,13 @@ using System.Threading.Tasks;
 
 namespace PlayniteServices.Controllers.IGDB
 {
-    [Route("igdb/covers")]
+    [ServiceFilter(typeof(PlayniteVersionFilter))]
     public class CoverController : IgdbItemController
     {
         private static readonly object CacheLock = new object();
 
         private const string endpointPath = "covers";
 
-        [HttpGet("{coverId}")]
         public async Task<ServicesResponse<GameImage>> Get(ulong coverId)
         {
             return await GetItem(coverId);

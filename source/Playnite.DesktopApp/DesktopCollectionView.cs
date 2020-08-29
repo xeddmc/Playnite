@@ -22,6 +22,7 @@ namespace Playnite.DesktopApp
         private PlayniteSettings settings;
         private ViewSettings viewSettings;
         private GroupableField? currentGrouping = null;
+        private GamesViewType? loadedViewType = null;
 
         private Dictionary<GroupableField, string> groupFields = new Dictionary<GroupableField, string>()
         {
@@ -44,7 +45,9 @@ namespace Playnite.DesktopApp
             { GroupableField.LastActivity, nameof(GamesCollectionViewEntry.LastActivitySegment) },
             { GroupableField.Added, nameof(GamesCollectionViewEntry.AddedSegment) },
             { GroupableField.Modified, nameof(GamesCollectionViewEntry.ModifiedSegment) },
-            { GroupableField.PlayTime, nameof(GamesCollectionViewEntry.PlaytimeCategory) }
+            { GroupableField.PlayTime, nameof(GamesCollectionViewEntry.PlaytimeCategory) },
+            { GroupableField.Feature, nameof(GamesCollectionViewEntry.Feature) },
+            { GroupableField.InstallationStatus, nameof(GamesCollectionViewEntry.InstallationState) }
         };
 
         private Dictionary<GroupableField, Type> groupTypes = new Dictionary<GroupableField, Type>()
@@ -53,7 +56,8 @@ namespace Playnite.DesktopApp
             { GroupableField.Genre, typeof(Genre) },
             { GroupableField.Developer, typeof(Developer) },
             { GroupableField.Publisher, typeof(Publisher) },
-            { GroupableField.Tag, typeof(Tag) }
+            { GroupableField.Tag, typeof(Tag) },
+            { GroupableField.Feature, typeof(GameFeature) }
         };
 
         private GamesViewType? viewType = null;
@@ -84,6 +88,7 @@ namespace Playnite.DesktopApp
             Database.Series.ItemUpdated += Series_ItemUpdated;
             Database.Sources.ItemUpdated += Sources_ItemUpdated;
             Database.Tags.ItemUpdated += Tags_ItemUpdated;
+            Database.Features.ItemUpdated += Features_ItemUpdated;
             viewSettings = settings.ViewSettings;
             viewSettings.PropertyChanged += ViewSettings_PropertyChanged;
             using (CollectionView.DeferRefresh())
@@ -94,6 +99,7 @@ namespace Playnite.DesktopApp
 
         public override void Dispose()
         {
+            ClearItems();
             base.Dispose();
             Database.Games.ItemCollectionChanged -= Database_GamesCollectionChanged;
             Database.Games.ItemUpdated -= Database_GameUpdated;
@@ -107,6 +113,7 @@ namespace Playnite.DesktopApp
             Database.Series.ItemUpdated -= Series_ItemUpdated;
             Database.Sources.ItemUpdated -= Sources_ItemUpdated;
             Database.Tags.ItemUpdated -= Tags_ItemUpdated;
+            Database.Features.ItemUpdated -= Features_ItemUpdated;
             viewSettings.PropertyChanged -= ViewSettings_PropertyChanged;
         }
 
@@ -116,7 +123,8 @@ namespace Playnite.DesktopApp
             {
                 nameof(ViewSettings.SortingOrder),
                 nameof(ViewSettings.GroupingOrder),
-                nameof(ViewSettings.SortingOrderDirection)
+                nameof(ViewSettings.SortingOrderDirection),
+                nameof(ViewSettings.GamesViewType)
             }).Contains(e.PropertyName))
             {
                 Logger.Debug("Updating collection view settings.");
@@ -132,35 +140,44 @@ namespace Playnite.DesktopApp
         private void SetViewDescriptions()
         {
             var sortDirection = viewSettings.SortingOrderDirection == SortOrderDirection.Ascending ? ListSortDirection.Ascending : ListSortDirection.Descending;
-            switch (viewSettings.GroupingOrder)
+            if (viewSettings.GamesViewType == Playnite.ViewType.Grid)
             {
-                case GroupableField.Category:
-                case GroupableField.Genre:
-                case GroupableField.Developer:
-                case GroupableField.Publisher:
-                case GroupableField.Tag:
-                    ViewType = GamesViewType.ListGrouped;
-                    break;
-                case GroupableField.None:
-                case GroupableField.Library:
-                case GroupableField.Platform:
-                case GroupableField.Series:
-                case GroupableField.AgeRating:
-                case GroupableField.Region:
-                case GroupableField.Source:
-                case GroupableField.ReleaseYear:
-                case GroupableField.CompletionStatus:
-                case GroupableField.UserScore:
-                case GroupableField.CriticScore:
-                case GroupableField.CommunityScore:
-                case GroupableField.LastActivity:
-                case GroupableField.Added:
-                case GroupableField.Modified:
-                case GroupableField.PlayTime:
-                    ViewType = GamesViewType.Standard;
-                    break;
-                default:
-                    throw new Exception("Uknown GroupingOrder");
+                ViewType = GamesViewType.Standard;
+            }
+            else
+            {
+                switch (viewSettings.GroupingOrder)
+                {
+                    case GroupableField.Category:
+                    case GroupableField.Genre:
+                    case GroupableField.Developer:
+                    case GroupableField.Publisher:
+                    case GroupableField.Tag:
+                    case GroupableField.Feature:
+                        ViewType = GamesViewType.ListGrouped;
+                        break;
+                    case GroupableField.None:
+                    case GroupableField.Library:
+                    case GroupableField.Platform:
+                    case GroupableField.Series:
+                    case GroupableField.AgeRating:
+                    case GroupableField.Region:
+                    case GroupableField.Source:
+                    case GroupableField.ReleaseYear:
+                    case GroupableField.CompletionStatus:
+                    case GroupableField.UserScore:
+                    case GroupableField.CriticScore:
+                    case GroupableField.CommunityScore:
+                    case GroupableField.LastActivity:
+                    case GroupableField.Added:
+                    case GroupableField.Modified:
+                    case GroupableField.PlayTime:
+                    case GroupableField.InstallationStatus:
+                        ViewType = GamesViewType.Standard;
+                        break;
+                    default:
+                        throw new Exception("Uknown GroupingOrder");
+                }
             }
 
             currentGrouping = viewSettings.GroupingOrder;
@@ -172,7 +189,11 @@ namespace Playnite.DesktopApp
 
             if (viewSettings.GroupingOrder != GroupableField.None)
             {
-                CollectionView.GroupDescriptions.Add(new PropertyGroupDescription(groupFields[viewSettings.GroupingOrder]));
+                if (viewSettings.GamesViewType != Playnite.ViewType.Grid)
+                {
+                    CollectionView.GroupDescriptions.Add(new PropertyGroupDescription(groupFields[viewSettings.GroupingOrder]));
+                }
+
                 if (CollectionView.SortDescriptions.First().PropertyName != groupFields[viewSettings.GroupingOrder])
                 {
                     CollectionView.SortDescriptions.Insert(0, new SortDescription(groupFields[viewSettings.GroupingOrder], ListSortDirection.Ascending));
@@ -215,6 +236,8 @@ namespace Playnite.DesktopApp
                     return sourceGame.PublisherIds;
                 case GroupableField.Tag:
                     return sourceGame.TagIds;
+                case GroupableField.Feature:
+                    return sourceGame.FeatureIds;
                 case GroupableField.None:
                     return null;
                 default:
@@ -224,21 +247,19 @@ namespace Playnite.DesktopApp
 
         public void SetViewType(GamesViewType? viewType)
         {
-            if (currentGrouping == viewSettings.GroupingOrder)
+            if (currentGrouping == viewSettings.GroupingOrder && viewType == loadedViewType)
             {
                 return;
             }
 
-            Items.Clear();
+            ClearItems();
             switch (viewType)
             {
                 case GamesViewType.Standard:
-                    Items.Clear();
                     Items.AddRange(Database.Games.Select(x => new GamesCollectionViewEntry(x, GetLibraryPlugin(x), settings)));
                     break;
 
                 case GamesViewType.ListGrouped:
-                    Items.Clear();
                     Items.AddRange(Database.Games.SelectMany(x =>
                     {
                         var ids = GetGroupingIds(viewSettings.GroupingOrder, x);
@@ -262,6 +283,20 @@ namespace Playnite.DesktopApp
             }
 
             this.viewType = viewType;
+            loadedViewType = viewType;
+        }
+
+        private void ClearItems()
+        {
+            if (Items.HasItems())
+            {
+                foreach (var item in Items)
+                {
+                    item.Dispose();
+                }
+
+                Items.Clear();
+            }
         }
 
         private void Database_PlatformUpdated(object sender, ItemUpdatedEventArgs<Platform> e)
@@ -336,6 +371,14 @@ namespace Playnite.DesktopApp
                 nameof(Game.Categories));
         }
 
+        private void Features_ItemUpdated(object sender, ItemUpdatedEventArgs<GameFeature> e)
+        {
+            DoGroupDbObjectsUpdate(
+                GroupableField.Feature, e,
+                (a, b) => a.FeatureIds?.Any() == true && b.Intersect(a.FeatureIds).Any(),
+                nameof(Game.Features));
+        }
+
         private void DoGroupDbObjectsUpdate<TItem>(
             GroupableField order,
             ItemUpdatedEventArgs<TItem> updatedItems,
@@ -373,6 +416,7 @@ namespace Playnite.DesktopApp
                 case GroupableField.Developer:
                 case GroupableField.Publisher:
                 case GroupableField.Tag:
+                case GroupableField.Feature:
                     return ViewType == GamesViewType.ListGrouped && !GetGroupingIds(viewSettings.GroupingOrder, oldData).IsListEqual(GetGroupingIds(viewSettings.GroupingOrder, newData));
                 case GroupableField.Platform:
                 case GroupableField.Series:
@@ -398,6 +442,8 @@ namespace Playnite.DesktopApp
                     return oldData.Modified != newData.Modified;
                 case GroupableField.PlayTime:
                     return oldData.Playtime != newData.Playtime;
+                case GroupableField.InstallationStatus:
+                    return oldData.IsInstalled != newData.IsInstalled;
                 default:
                     throw new Exception("Uknown GroupableField");
             }
@@ -452,6 +498,7 @@ namespace Playnite.DesktopApp
                 {
                     foreach (var item in toRemove)
                     {
+                        item.Dispose();
                         Items.Remove(item);
                     }
                 }

@@ -14,17 +14,17 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
+using Playnite.Windows;
 
 namespace Playnite.DesktopApp.Windows
 {
     /// <summary>
     /// Interaction logic for MessageBoxWindow.xaml
     /// </summary>
-    public partial class MessageBoxWindow : WindowBase, INotifyPropertyChanged
+    public partial class MessageBoxWindow : WindowBase
     {
         private MessageBoxResult result;
-
-        public event PropertyChangedEventHandler PropertyChanged;
+        private object resultCustom;
 
         private string text = string.Empty;
         public string Text
@@ -92,7 +92,6 @@ namespace Playnite.DesktopApp.Windows
             }
         }
 
-
         private bool showInputField = false;
         public bool ShowInputField
         {
@@ -137,21 +136,18 @@ namespace Playnite.DesktopApp.Windows
             }
         }
 
-        
         public MessageBoxWindow() : base()
         {
             InitializeComponent();
         }
 
-        public void OnPropertyChanged(string name)
+        public void ShowInputReadOnly(
+            Window owner,
+            string messageBoxText,
+            string caption,
+            string inputText)
         {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-        }
-
-
-        public void ShowInputReadOnly(Window owner, string messageBoxText, string caption, string inputText)
-        {
-            if (owner == null)
+            if (owner == null || owner == this)
             {
                 WindowStartupLocation = WindowStartupLocation.CenterScreen;
             }
@@ -161,19 +157,24 @@ namespace Playnite.DesktopApp.Windows
                 Owner = owner;
             }
 
+            WindowManager.NotifyChildOwnershipChanges();
             TextInputText.Focus();
-            Text = messageBoxText;
-            Caption = caption;
+            SetStrings(messageBoxText, caption);
             ShowInputField = true;
             ShowOKButton = true;
             InputText = inputText ?? string.Empty;
             IsTextReadOnly = true;
             ShowDialog();
+            WindowManager.NotifyChildOwnershipChanges();
         }
 
-        public StringSelectionDialogResult ShowInput(Window owner, string messageBoxText, string caption, string defaultInput)
+        public StringSelectionDialogResult ShowInput(
+            Window owner,
+            string messageBoxText,
+            string caption,
+            string defaultInput)
         {
-            if (owner == null)
+            if (owner == null || owner == this)
             {
                 WindowStartupLocation = WindowStartupLocation.CenterScreen;
             }
@@ -183,14 +184,15 @@ namespace Playnite.DesktopApp.Windows
                 Owner = owner;
             }
 
+            WindowManager.NotifyChildOwnershipChanges();
             TextInputText.Focus();
-            Text = messageBoxText;
-            Caption = caption;
+            SetStrings(messageBoxText, caption);
             ShowInputField = true;
             ShowOKButton = true;
             ShowCancelButton = true;
             InputText = defaultInput ?? string.Empty;
             ShowDialog();
+            WindowManager.NotifyChildOwnershipChanges();
 
             if (result == MessageBoxResult.Cancel)
             {
@@ -202,9 +204,16 @@ namespace Playnite.DesktopApp.Windows
             }
         }
 
-        public MessageBoxResult Show(Window owner, string messageBoxText, string caption, MessageBoxButton button, MessageBoxImage icon, MessageBoxResult defaultResult, MessageBoxOptions options)
+        public MessageBoxResult Show(
+            Window owner,
+            string messageBoxText,
+            string caption,
+            MessageBoxButton button,
+            MessageBoxImage icon,
+            MessageBoxResult defaultResult,
+            MessageBoxOptions options)
         {
-            if (owner == null)
+            if (owner == null || owner == this)
             {
                 WindowStartupLocation = WindowStartupLocation.CenterScreen;
             }
@@ -214,9 +223,9 @@ namespace Playnite.DesktopApp.Windows
                 Owner = owner;
             }
 
+            WindowManager.NotifyChildOwnershipChanges();
             result = defaultResult;
-            Text = messageBoxText;
-            Caption = caption;
+            SetStrings(messageBoxText, caption);
             DisplayIcon = icon;
 
             switch (button)
@@ -248,7 +257,80 @@ namespace Playnite.DesktopApp.Windows
             }
 
             ShowDialog();
+            WindowManager.NotifyChildOwnershipChanges();
             return result;
+        }
+
+        public object ShowCustom(
+            Window owner,
+            string messageBoxText,
+            string caption,
+            MessageBoxImage icon,
+            List<object> options,
+            List<string> optionsTitles)
+        {
+            if (owner == null || owner == this)
+            {
+                WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            }
+
+            if (this != owner)
+            {
+                Owner = owner;
+            }
+
+            WindowManager.NotifyChildOwnershipChanges();
+            SetStrings(messageBoxText, caption);
+            DisplayIcon = icon;
+
+            ShowOKButton = false;
+            ShowYesButton = false;
+            ShowNoButton = false;
+            ShowCancelButton = false;
+            ShowInputField = false;
+
+            for (int i = 0; i < options.Count; i++)
+            {
+                var option = options[i];
+                var title = optionsTitles[i];
+
+                var button = new Button();
+                button.Content = title;
+                button.Style = ResourceProvider.GetResource("BottomButton") as Style;
+                button.Tag = option;
+                button.Click += (s, __) =>
+                {
+                    resultCustom = (s as Button).Tag;
+                    Close();
+                };
+
+                StackButtons.Children.Add(button);
+            }
+
+            ShowDialog();
+            WindowManager.NotifyChildOwnershipChanges();
+            return resultCustom;
+        }
+
+        private void SetStrings(string messageText, string messageCaption)
+        {
+            if (messageText?.StartsWith("LOC") == true)
+            {
+                Text = ResourceProvider.GetString(messageText);
+            }
+            else
+            {
+                Text = messageText;
+            }
+
+            if (messageCaption?.StartsWith("LOC") == true)
+            {
+                Caption = ResourceProvider.GetString(messageCaption);
+            }
+            else
+            {
+                Caption = messageCaption;
+            }
         }
 
         private void ButtonOK_Click(object sender, RoutedEventArgs e)

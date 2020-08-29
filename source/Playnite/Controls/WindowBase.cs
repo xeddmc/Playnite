@@ -1,23 +1,69 @@
-﻿using System;
+﻿using Playnite.Windows;
+using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation.Peers;
 using System.Windows.Controls;
+using System.Windows.Media;
 
 namespace Playnite.Controls
 {
+    public class EmptyWindowAutomationPeer : FrameworkElementAutomationPeer
+    {
+        private static readonly List<AutomationPeer> emptyList = new List<AutomationPeer>();
+
+        public EmptyWindowAutomationPeer(FrameworkElement owner) : base(owner)
+        {
+        }
+
+        protected override string GetNameCore()
+        {
+            return nameof(EmptyWindowAutomationPeer);
+        }
+
+        protected override AutomationControlType GetAutomationControlTypeCore()
+        {
+            return AutomationControlType.Window;
+        }
+
+        protected override List<AutomationPeer> GetChildrenCore()
+        {
+            return emptyList;
+        }
+    }
+
     [TemplatePart(Name = "PART_ButtonMinimize", Type = typeof(Button))]
     [TemplatePart(Name = "PART_ButtonMaximize", Type = typeof(Button))]
     [TemplatePart(Name = "PART_ButtonClose", Type = typeof(Button))]
     [TemplatePart(Name = "PART_TextTitle", Type = typeof(TextBlock))]
-    public class WindowBase : Window
+    public class WindowBase : Window, INotifyPropertyChanged
     {
+        private readonly EmptyWindowAutomationPeer automationPeer;
+
         private Button MinimizeButton;
         private Button MaximizeButton;
         private Button CloseButton;
         private TextBlock TextTitle;
+
+        public static TextFormattingMode TextFormattingMode { get; private set; } = TextFormattingMode.Ideal;
+        public static TextRenderingMode TextRenderingMode { get; private set; } = TextRenderingMode.Auto;
+        public event PropertyChangedEventHandler PropertyChanged;
+
+        protected override AutomationPeer OnCreateAutomationPeer()
+        {
+            return automationPeer;
+        }
+
+        public bool HasChildWindow
+        {
+            get => WindowManager.GetHasChild(this);
+        }
 
         public bool ShowMinimizeButton
         {
@@ -87,11 +133,26 @@ namespace Playnite.Controls
 
         public WindowBase() : base()
         {
-            Style defaultStyle = (Style)Application.Current.TryFindResource(typeof(WindowBase));
+            automationPeer = new EmptyWindowAutomationPeer(this);
+            Style defaultStyle = (Style)Application.Current?.TryFindResource(typeof(WindowBase));
             if (defaultStyle != null)
             {
                 Style = defaultStyle;
             }
+
+            if (Localization.IsRightToLeft)
+            {
+                FlowDirection = FlowDirection.RightToLeft;
+            }
+
+            TextOptions.SetTextFormattingMode(this, TextFormattingMode);
+            TextOptions.SetTextRenderingMode(this, TextRenderingMode);
+        }
+
+        public static void SetTextRenderingOptions(TextFormattingModeOptions formatting, TextRenderingModeOptions rendering)
+        {
+            TextFormattingMode = (TextFormattingMode)formatting;
+            TextRenderingMode = (TextRenderingMode)rendering;
         }
 
         public override void OnApplyTemplate()
@@ -185,6 +246,11 @@ namespace Playnite.Controls
             {
                 window.MinimizeButton.Visibility = (bool)e.NewValue == true ? Visibility.Visible : Visibility.Collapsed;
             }
+        }
+
+        public void OnPropertyChanged([CallerMemberName]string name = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
         }
     }
 }

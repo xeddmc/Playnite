@@ -24,11 +24,6 @@ namespace Playnite.Common
         public static void CreateDirectory(string path, bool clean)
         {
             var directory = path;
-            if (!string.IsNullOrEmpty(Path.GetExtension(path)))
-            {
-                directory = Path.GetDirectoryName(path);
-            }
-
             if (string.IsNullOrEmpty(directory))
             {
                 return;
@@ -194,14 +189,14 @@ namespace Playnite.Common
             throw new IOException($"Failed to read {path}", ioException);
         }
 
-        public static Stream OpenFileStreamSafe(string path, int retryAttempts = 5)
+        public static Stream OpenReadFileStreamSafe(string path, int retryAttempts = 5)
         {
             IOException ioException = null;
             for (int i = 0; i < retryAttempts; i++)
             {
                 try
                 {
-                    return new FileStream(path, FileMode.Open);
+                    return new FileStream(path, FileMode.Open, FileAccess.Read);
                 }
                 catch (IOException exc)
                 {
@@ -212,6 +207,12 @@ namespace Playnite.Common
             }
 
             throw new IOException($"Failed to read {path}", ioException);
+        }
+
+        public static void WriteStringToFile(string path, string content)
+        {
+            PrepareSaveFile(path);
+            File.WriteAllText(path, content);
         }
 
         public static void WriteStringToFileSafe(string path, string content, int retryAttempts = 5)
@@ -259,7 +260,6 @@ namespace Playnite.Common
                 }
                 catch (UnauthorizedAccessException exc)
                 {
-
                     logger.Error(exc, $"Can't detele file, UnauthorizedAccessException. {path}");
                     return;
                 }
@@ -289,8 +289,7 @@ namespace Playnite.Common
 
         public static void CopyDirectory(string sourceDirName, string destDirName, bool copySubDirs = true, bool overwrite = true)
         {
-            DirectoryInfo dir = new DirectoryInfo(sourceDirName);
-
+            var dir = new DirectoryInfo(sourceDirName);
             if (!dir.Exists)
             {
                 throw new DirectoryNotFoundException(
@@ -298,13 +297,13 @@ namespace Playnite.Common
                     + sourceDirName);
             }
 
-            DirectoryInfo[] dirs = dir.GetDirectories();
+            var dirs = dir.GetDirectories();
             if (!Directory.Exists(destDirName))
             {
                 Directory.CreateDirectory(destDirName);
             }
 
-            FileInfo[] files = dir.GetFiles();
+            var files = dir.GetFiles();
             foreach (FileInfo file in files)
             {
                 string temppath = Path.Combine(destDirName, file.Name);

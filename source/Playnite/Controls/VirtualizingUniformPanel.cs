@@ -230,7 +230,7 @@ namespace Playnite.Controls
                     RemoveInternalChildRange(args.Position.Index, args.ItemUICount);
                     break;
                 case NotifyCollectionChangedAction.Move:
-                    if (args.Position.Index < 0)
+                    if (args.OldPosition.Index < 0)
                     {
                         InvalidateMeasure();
                         ScrollOwner?.InvalidateScrollInfo();
@@ -258,10 +258,19 @@ namespace Playnite.Controls
                 return new Size(0, 0);
             }
 
-            var totalRows = (int)Math.Ceiling(itemCount / (double)computedColumns);
-            return new Size(
-                viewport.Width,
-                totalRows * ItemHeight);
+            if (computedColumns == 0)
+            {
+                return new Size(
+                    viewport.Width,
+                    itemCount * ItemHeight);
+            }
+            else
+            {
+                var totalRows = (int)Math.Ceiling(itemCount / (double)computedColumns);
+                return new Size(
+                    viewport.Width,
+                    totalRows * ItemHeight);
+            }
         }
 
         #region IScrollInfo

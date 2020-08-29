@@ -9,6 +9,7 @@ using System.Collections.ObjectModel;
 using Playnite.API;
 using Microsoft.Win32;
 using System.IO;
+using Playnite.SDK.Exceptions;
 
 namespace Playnite.Scripting.PowerShell
 {
@@ -16,7 +17,7 @@ namespace Playnite.Scripting.PowerShell
     {
         private static NLog.Logger logger = NLog.LogManager.GetLogger("PowerShell");
         private Runspace runspace;
-        
+
         public static bool IsInstalled
         {
             get
@@ -52,39 +53,72 @@ namespace Playnite.Scripting.PowerShell
             return new PowerShellRuntime();
         }
 
-        public object Execute(string script)
+        public object Execute(string script, string workDir = null)
         {
-            return Execute(script, null);
+            return Execute(script, null, workDir);
         }
 
-        public object Execute(string script, Dictionary<string, object> variables)
+        public object Execute(string script, Dictionary<string, object> variables, string workDir = null)
         {
-            using (var pipe = runspace.CreatePipeline(script))
+            if (!workDir.IsNullOrEmpty())
             {
-                if (variables != null)
+                runspace.SessionStateProxy.Path.PushCurrentLocation("main");
+                runspace.SessionStateProxy.Path.SetLocation(WildcardPattern.Escape(workDir));
+            }
+
+            try
+            {
+                using (var pipe = runspace.CreatePipeline(script))
                 {
-                    foreach (var key in variables.Keys)
-                    {                        
-                        runspace.SessionStateProxy.SetVariable(key, variables[key]);
+                    if (variables != null)
+                    {
+                        foreach (var key in variables.Keys)
+                        {
+                            runspace.SessionStateProxy.SetVariable(key, variables[key]);
+                        }
+                    }
+
+                    Collection<PSObject> result = null;
+
+                    try
+                    {
+                        result = pipe.Invoke();
+                    }
+                    catch (RuntimeException e)
+                    {
+                        throw new ScriptRuntimeException(e.Message, e.ErrorRecord.ScriptStackTrace);
+                    }
+
+                    if (result == null)
+                    {
+                        return null;
+                    }
+                    else
+                    {
+                        if (result.Count == 1)
+                        {
+                            return result[0].BaseObject;
+                        }
+                        else
+                        {
+                            return result.Select(a => a?.BaseObject).ToList();
+                        }
                     }
                 }
-
-                var result = pipe.Invoke();
-                if (result.Count == 1)
+            }
+            finally
+            {
+                if (!workDir.IsNullOrEmpty())
                 {
-                    return result[0].BaseObject;
-                }
-                else
-                {
-                    return result.Select(a => a?.BaseObject).ToList();
+                    runspace.SessionStateProxy.Path.PopLocation("main");
                 }
             }
         }
 
-        public object ExecuteFile(string path)
+        public object ExecuteFile(string path, string workDir = null)
         {
             var content = File.ReadAllText(path);
-            return Execute(content);
+            return Execute(content, null, workDir);
         }
 
         public void SetVariable(string name, object value)

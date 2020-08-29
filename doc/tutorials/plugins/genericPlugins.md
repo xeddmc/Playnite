@@ -3,6 +3,7 @@ Generic Plugins
 
 To implement generic plugin:
 
+* Read the introduction to [extensions](../intro.md) and [plugins](plugins.md).
 * Create new public class inheriting from [Plugin](xref:Playnite.SDK.Plugins.Plugin) abstract class.
 * Add implementation for mandatory abstract members.
 
@@ -74,6 +75,16 @@ public class TestPlugin : Plugin
     public override void OnApplicationStarted()
     {
         // Add code to be execute when Playnite is initialized.
+    }
+
+    public override void OnApplicationStopped()
+    {
+        // Add code to be executed when Playnite is shutting down.
+    }
+
+    public override void OnLibraryUpdated()
+    {
+        // Add code to be execute when library is updated.
     }
 }
 ```

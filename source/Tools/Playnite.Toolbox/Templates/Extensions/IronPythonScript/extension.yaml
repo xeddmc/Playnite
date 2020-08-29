@@ -1,0 +1,8 @@
+Name: IronPython Extension
+Author: John Doe
+Version: 1.0
+Module: IronPythonScript.py
+Type: Script
+Functions: 
+    - Description: menu_function
+      FunctionName: MenuFunctionDescription

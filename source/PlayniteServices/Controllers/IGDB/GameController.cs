@@ -1,8 +1,10 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
 using Playnite;
 using Playnite.Common;
 using Playnite.SDK;
+using PlayniteServices.Filters;
 using PlayniteServices.Models.IGDB;
 using System;
 using System.Collections.Generic;
@@ -21,15 +23,28 @@ namespace PlayniteServices.Controllers.IGDB
         private static readonly object CacheLock = new object();
         private const string endpointPath = "games";
 
+        private AppSettings appSettings;
+
+        public GameController(IOptions<AppSettings> settings)
+        {
+            appSettings = settings.Value;
+        }
+
+        [ServiceFilter(typeof(PlayniteVersionFilter))]
         [HttpGet("{gameId}")]
         public async Task<ServicesResponse<Game>> Get(ulong gameId)
         {
+            return await GetItem(gameId);
+        }
+
+        public static async Task<ServicesResponse<Game>> GetItem(ulong gameId)
+        {
             return new ServicesResponse<Game>(await GetItem<Game>(gameId, endpointPath, CacheLock));
         }
-        
+
         // Only use for IGDB webhook.
         [HttpPost]
-        public ActionResult Post([FromBody]Game game)
+        public async Task<ActionResult> Post()
         {
             if (Request.Headers.TryGetValue("X-Secret", out var secret))
             {
@@ -38,12 +53,29 @@ namespace PlayniteServices.Controllers.IGDB
                     return BadRequest();
                 }
 
+                Game game = null;
+                string jsonString = null;
+                using (StreamReader reader = new StreamReader(Request.Body, Encoding.UTF8))
+                {
+                    jsonString = await reader.ReadToEndAsync();
+                    if (!string.IsNullOrEmpty(jsonString))
+                    {
+                        game = Serialization.FromJson<Game>(jsonString);
+                    }
+                }
+
+                if (game == null)
+                {
+                    logger.Error("Failed IGDB content serialization.");
+                    return Ok();
+                }
+
                 logger.Info($"Received game webhook from IGDB: {game.id}");
                 var cachePath = Path.Combine(IGDB.CacheDirectory, endpointPath, game.id + ".json");
                 lock (CacheLock)
                 {
-                    FileSystem.PrepareSaveFile(cachePath);                    
-                    System.IO.File.WriteAllText(cachePath, Serialization.ToJson(game));
+                    FileSystem.PrepareSaveFile(cachePath);
+                    System.IO.File.WriteAllText(cachePath, jsonString, Encoding.UTF8);
                 }
 
                 return Ok();
@@ -53,16 +85,29 @@ namespace PlayniteServices.Controllers.IGDB
         }
     }
 
+    [ServiceFilter(typeof(PlayniteVersionFilter))]
     [Route("igdb/game_parsed")]
     public class GameParsedController : Controller
     {
+        private IOptions<AppSettings> appSettings;
+
+        public GameParsedController(IOptions<AppSettings> settings)
+        {
+            appSettings = settings;
+        }
+
         [HttpGet("{gameId}")]
         public async Task<ServicesResponse<ExpandedGame>> Get(ulong gameId)
         {
-            var game = (await new GameController().Get(gameId)).Data;
+            return new ServicesResponse<ExpandedGame>(await GetExpandedGame(gameId));
+        }
+
+        public async static Task<ExpandedGame> GetExpandedGame(ulong gameId)
+        {
+            var game = (await GameController.GetItem(gameId)).Data;
             if (game.id == 0)
             {
-                new ServicesResponse<ExpandedGame>(new ExpandedGame());
+                new ExpandedGame();
             }
 
             var parsedGame = new ExpandedGame()
@@ -76,7 +121,7 @@ namespace PlayniteServices.Controllers.IGDB
                 popularity = game.popularity,
                 version_title = game.version_title,
                 category = game.category,
-                first_release_date = game.first_release_date,
+                first_release_date = game.first_release_date * 1000,
                 rating = game.rating,
                 aggregated_rating = game.aggregated_rating,
                 total_rating = game.total_rating
@@ -127,9 +172,36 @@ namespace PlayniteServices.Controllers.IGDB
                 }
             }
 
+            if (game.player_perspectives?.Any() == true)
+            {
+                parsedGame.player_perspectives = new List<PlayerPerspective>();
+                foreach (var persId in game.player_perspectives)
+                {
+                    parsedGame.player_perspectives.Add((await PlayerPerspectiveController.GetItem(persId)).Data);
+                }
+            }
+
             if (game.cover > 0)
             {
                 parsedGame.cover_v3 = (await CoverController.GetItem(game.cover)).Data;
+            }
+
+            if (game.artworks?.Any() == true)
+            {
+                parsedGame.artworks = new List<GameImage>();
+                foreach (var artworkId in game.artworks)
+                {
+                    parsedGame.artworks.Add((await ArtworkController.GetItem(artworkId)).Data);
+                }
+            }
+
+            if (game.screenshots?.Any() == true)
+            {
+                parsedGame.screenshots = new List<GameImage>();
+                foreach (var screenshotId in game.screenshots)
+                {
+                    parsedGame.screenshots.Add((await ScreenshotController.GetItem(screenshotId)).Data);
+                }
             }
 
             // fallback properties for 4.x
@@ -138,9 +210,7 @@ namespace PlayniteServices.Controllers.IGDB
             parsedGame.developers = parsedGame.involved_companies?.Where(a => a.developer == true).Select(a => a.company.name).ToList();
             parsedGame.genres = parsedGame.genres_v3?.Select(a => a.name).ToList();
             parsedGame.game_modes = parsedGame.game_modes_v3?.Select(a => a.name).ToList();
-            parsedGame.first_release_date = parsedGame.first_release_date * 1000;
-
-            return new ServicesResponse<ExpandedGame>(parsedGame);
+            return parsedGame;
         }
     }
 }

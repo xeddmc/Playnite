@@ -18,110 +18,122 @@ namespace Playnite.SDK.Models
     /// </summary>
     public enum GameField
     {
-        /// 
+        ///
         BackgroundImage,
-        /// 
+        ///
         Description,
-        /// 
+        ///
         GenreIds,
-        /// 
+        ///
         Hidden,
-        /// 
+        ///
         Favorite,
-        /// 
+        ///
         Icon,
-        /// 
+        ///
         CoverImage,
-        /// 
+        ///
         InstallDirectory,
-        /// 
+        ///
         GameImagePath,
-        /// 
+        ///
         LastActivity,
-        /// 
+        ///
         SortingName,
-        /// 
+        ///
         Gameid,
-        /// 
+        ///
         PluginId,
-        /// 
+        ///
         OtherActions,
-        /// 
+        ///
         PlayAction,
-        /// 
+        ///
         PlatformId,
-        /// 
+        ///
         PublisherIds,
-        /// 
+        ///
         DeveloperIds,
-        /// 
+        ///
         ReleaseDate,
-        /// 
+        ///
         CategoryIds,
-        /// 
+        ///
         TagIds,
-        /// 
+        ///
         Links,
-        /// 
+        ///
         IsInstalling,
-        /// 
+        ///
         IsUninstalling,
-        /// 
+        ///
         IsLaunching,
-        /// 
+        ///
         IsRunning,
-        /// 
+        ///
         IsInstalled,
-        /// 
+        ///
         IsCustomGame,
-        /// 
+        ///
         Playtime,
-        /// 
+        ///
         Added,
-        ///       
+        ///
         Modified,
-        ///       
+        ///
         PlayCount,
-        /// 
+        ///
         SeriesId,
-        /// 
+        ///
         Version,
-        /// 
+        ///
         AgeRatingId,
-        /// 
+        ///
         RegionId,
-        /// 
+        ///
         SourceId,
-        /// 
+        ///
         CompletionStatus,
-        /// 
+        ///
         UserScore,
-        /// 
+        ///
         CriticScore,
-        /// 
+        ///
         CommunityScore,
-        /// 
+        ///
         Genres,
-        /// 
+        ///
         Developers,
-        /// 
+        ///
         Publishers,
-        /// 
+        ///
         Tags,
-        /// 
+        ///
         Categories,
-        /// 
+        ///
         Platform,
-        /// 
+        ///
         Series,
-        /// 
+        ///
         AgeRating,
-        /// 
+        ///
         Region,
-        /// 
+        ///
         Source,
-        /// 
-        ReleaseYear
+        ///
+        ReleaseYear,
+        ///
+        ActionsScriptLanguage,
+        ///
+        PreScript,
+        ///
+        PostScript,
+        ///
+        Name,
+        ///
+        Features,
+        ///
+        FeatureIds,
     }
 
     /// <summary>
@@ -219,7 +231,6 @@ namespace Playnite.SDK.Models
                 OnPropertyChanged();
             }
         }
-
 
         private string icon;
         /// <summary>
@@ -425,6 +436,7 @@ namespace Playnite.SDK.Models
             {
                 platformId = value;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(Platform));
             }
         }
 
@@ -523,6 +535,25 @@ namespace Playnite.SDK.Models
             }
         }
 
+        private List<Guid> featureIds;
+        /// <summary>
+        /// Gets or sets list of game features.
+        /// </summary>
+        public List<Guid> FeatureIds
+        {
+            get
+            {
+                return featureIds;
+            }
+
+            set
+            {
+                featureIds = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(Features));
+            }
+        }
+
         private ObservableCollection<Link> links;
         /// <summary>
         /// Gets or sets list of game related web links.
@@ -608,16 +639,8 @@ namespace Playnite.SDK.Models
             {
                 isInstalled = value;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(InstallationStatus));
             }
-        }
-
-        /// <summary>
-        /// Gets value indicating wheter the game is custom game.
-        /// </summary>
-        [JsonIgnore]
-        public bool IsCustomGame
-        {
-            get => PluginId == Guid.Empty;
         }
 
         private long playtime = 0;
@@ -867,7 +890,49 @@ namespace Playnite.SDK.Models
             }
         }
 
-        #region Expanded        
+        private ScriptLanguage actionsScriptLanguage = ScriptLanguage.PowerShell;
+        /// <summary>
+        /// Gets or sets scripting language for <see cref="PreScript"/> and <see cref="PostScript"/> scripts.
+        /// </summary>
+        public ScriptLanguage ActionsScriptLanguage
+        {
+            get => actionsScriptLanguage;
+            set
+            {
+                actionsScriptLanguage = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private string preScript;
+        /// <summary>
+        /// Gets or sets pre-action script.
+        /// </summary>
+        public string PreScript
+        {
+            get => preScript;
+            set
+            {
+                preScript = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private string postScript;
+        /// <summary>
+        /// Gets or sets post-action script.
+        /// </summary>
+        public string PostScript
+        {
+            get => postScript;
+            set
+            {
+                postScript = value;
+                OnPropertyChanged();
+            }
+        }
+
+        #region Expanded
 
         /// <summary>
         /// Gets game's genres.
@@ -876,10 +941,10 @@ namespace Playnite.SDK.Models
         public List<Genre> Genres
         {
             get
-            {                
+            {
                 if (genreIds?.Any() == true && DatabaseReference != null)
                 {
-                    return new List<Genre>(DatabaseReference?.Genres.Where(a => genreIds.Contains(a.Id)));
+                    return new List<Genre>(DatabaseReference?.Genres.Where(a => genreIds.Contains(a.Id)).OrderBy(a => a.Name));
                 }
 
                 return null;
@@ -896,7 +961,7 @@ namespace Playnite.SDK.Models
             {
                 if (developerIds?.Any() == true && DatabaseReference != null)
                 {
-                    return new List<Company>(DatabaseReference?.Companies.Where(a => developerIds.Contains(a.Id)));
+                    return new List<Company>(DatabaseReference?.Companies.Where(a => developerIds.Contains(a.Id)).OrderBy(a => a.Name));
                 }
 
                 return null;
@@ -913,7 +978,7 @@ namespace Playnite.SDK.Models
             {
                 if (publisherIds?.Any() == true && DatabaseReference != null)
                 {
-                    return new List<Company>(DatabaseReference?.Companies.Where(a => publisherIds.Contains(a.Id)));
+                    return new List<Company>(DatabaseReference?.Companies.Where(a => publisherIds.Contains(a.Id)).OrderBy(a => a.Name));
                 }
 
                 return null;
@@ -930,7 +995,24 @@ namespace Playnite.SDK.Models
             {
                 if (tagIds?.Any() == true && DatabaseReference != null)
                 {
-                    return new List<Tag>(DatabaseReference?.Tags.Where(a => tagIds.Contains(a.Id)));
+                    return new List<Tag>(DatabaseReference?.Tags.Where(a => tagIds.Contains(a.Id)).OrderBy(a => a.Name));
+                }
+
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Gets game's features.
+        /// </summary>
+        [JsonIgnore]
+        public List<GameFeature> Features
+        {
+            get
+            {
+                if (featureIds?.Any() == true && DatabaseReference != null)
+                {
+                    return new List<GameFeature>(DatabaseReference?.Features.Where(a => featureIds.Contains(a.Id)).OrderBy(a => a.Name));
                 }
 
                 return null;
@@ -947,7 +1029,7 @@ namespace Playnite.SDK.Models
             {
                 if (categoryIds?.Any() == true && DatabaseReference != null)
                 {
-                    return new List<Category>(DatabaseReference?.Categories.Where(a => categoryIds.Contains(a.Id)));                    
+                    return new List<Category>(DatabaseReference?.Categories.Where(a => categoryIds.Contains(a.Id)).OrderBy(a => a.Name));
                 }
 
                 return null;
@@ -998,7 +1080,6 @@ namespace Playnite.SDK.Models
         {
             get => DatabaseReference?.Sources[sourceId];
         }
-
 
         /// <summary>
         /// Gets game's release year.
@@ -1099,6 +1180,24 @@ namespace Playnite.SDK.Models
             get => GetPlayTimeCategory(Playtime);
         }
 
+        /// <summary>
+        /// Gets value indicating wheter the game is custom game.
+        /// </summary>
+        [JsonIgnore]
+        public bool IsCustomGame
+        {
+            get => PluginId == Guid.Empty;
+        }
+
+        /// <summary>
+        /// Gets game installation state.
+        /// </summary>
+        [JsonIgnore]
+        public InstallationStatus InstallationStatus
+        {
+            get => IsInstalled ? InstallationStatus.Installed : InstallationStatus.Uninstalled;
+        }
+
         #endregion Expanded
 
         /// <summary>
@@ -1151,7 +1250,7 @@ namespace Playnite.SDK.Models
             {
                 return PastTimeSegment.Never;
             }
-            
+
             if (dateTime.Value.Date == DateTime.Today)
             {
                 return PastTimeSegment.Today;
@@ -1295,6 +1394,239 @@ namespace Playnite.SDK.Models
         public override string ToString()
         {
             return Name;
+        }
+
+        /// <inheritdoc/>
+        public override void CopyDiffTo(object target)
+        {
+            base.CopyDiffTo(target);
+
+            if (target is Game tro)
+            {
+                if (!string.Equals(BackgroundImage, tro.BackgroundImage, StringComparison.Ordinal))
+                {
+                    tro.BackgroundImage = BackgroundImage;
+                }
+
+                if (!string.Equals(Description, tro.Description, StringComparison.Ordinal))
+                {
+                    tro.Description = Description;
+                }
+
+                if (!GenreIds.IsListEqual(tro.GenreIds))
+                {
+                    tro.GenreIds = GenreIds;
+                }
+
+                if (Hidden != tro.Hidden)
+                {
+                    tro.Hidden = Hidden;
+                }
+
+                if (Favorite != tro.Favorite)
+                {
+                    tro.Favorite = Favorite;
+                }
+
+                if (!string.Equals(Icon, tro.Icon, StringComparison.Ordinal))
+                {
+                    tro.Icon = Icon;
+                }
+
+                if (!string.Equals(CoverImage, tro.CoverImage, StringComparison.Ordinal))
+                {
+                    tro.CoverImage = CoverImage;
+                }
+
+                if (!string.Equals(InstallDirectory, tro.InstallDirectory, StringComparison.Ordinal))
+                {
+                    tro.InstallDirectory = InstallDirectory;
+                }
+
+                if (!string.Equals(GameImagePath, tro.GameImagePath, StringComparison.Ordinal))
+                {
+                    tro.GameImagePath = GameImagePath;
+                }
+
+                if (LastActivity != tro.LastActivity)
+                {
+                    tro.LastActivity = LastActivity;
+                }
+
+                if (!string.Equals(SortingName, tro.SortingName, StringComparison.Ordinal))
+                {
+                    tro.SortingName = SortingName;
+                }
+
+                if (!string.Equals(GameId, tro.GameId, StringComparison.Ordinal))
+                {
+                    tro.GameId = GameId;
+                }
+
+                if (PluginId != tro.PluginId)
+                {
+                    tro.PluginId = PluginId;
+                }
+
+                if (!OtherActions.IsListEqualExact(tro.OtherActions))
+                {
+                    tro.OtherActions = OtherActions;
+                }
+
+                if (!GameAction.Equals(PlayAction, tro.PlayAction))
+                {
+                    tro.PlayAction = PlayAction;
+                }
+
+                if (PlatformId != tro.PlatformId)
+                {
+                    tro.PlatformId = PlatformId;
+                }
+
+                if (!PublisherIds.IsListEqual(tro.PublisherIds))
+                {
+                    tro.PublisherIds = PublisherIds;
+                }
+
+                if (!DeveloperIds.IsListEqual(tro.DeveloperIds))
+                {
+                    tro.DeveloperIds = DeveloperIds;
+                }
+
+                if (ReleaseDate != tro.ReleaseDate)
+                {
+                    tro.ReleaseDate = ReleaseDate;
+                }
+
+                if (!CategoryIds.IsListEqual(tro.CategoryIds))
+                {
+                    tro.CategoryIds = CategoryIds;
+                }
+
+                if (!TagIds.IsListEqual(tro.TagIds))
+                {
+                    tro.TagIds = TagIds;
+                }
+
+                if (!FeatureIds.IsListEqual(tro.FeatureIds))
+                {
+                    tro.FeatureIds = FeatureIds;
+                }
+
+                if (!Links.IsListEqualExact(tro.Links))
+                {
+                    tro.Links = Links;
+                }
+
+                if (IsInstalling != tro.IsInstalling)
+                {
+                    tro.IsInstalling = IsInstalling;
+                }
+
+                if (IsUninstalling != tro.IsUninstalling)
+                {
+                    tro.IsUninstalling = IsUninstalling;
+                }
+
+                if (IsLaunching != tro.IsLaunching)
+                {
+                    tro.IsLaunching = IsLaunching;
+                }
+
+                if (IsRunning != tro.IsRunning)
+                {
+                    tro.IsRunning = IsRunning;
+                }
+
+                if (IsInstalled != tro.IsInstalled)
+                {
+                    tro.IsInstalled = IsInstalled;
+                }
+
+                if (Playtime != tro.Playtime)
+                {
+                    tro.Playtime = Playtime;
+                }
+
+                if (Added != tro.Added)
+                {
+                    tro.Added = Added;
+                }
+
+                if (Modified != tro.Modified)
+                {
+                    tro.Modified = Modified;
+                }
+
+                if (PlayCount != tro.PlayCount)
+                {
+                    tro.PlayCount = PlayCount;
+                }
+
+                if (SeriesId != tro.SeriesId)
+                {
+                    tro.SeriesId = SeriesId;
+                }
+
+                if (Version != tro.Version)
+                {
+                    tro.Version = Version;
+                }
+
+                if (AgeRatingId != tro.AgeRatingId)
+                {
+                    tro.AgeRatingId = AgeRatingId;
+                }
+
+                if (RegionId != tro.RegionId)
+                {
+                    tro.RegionId = RegionId;
+                }
+
+                if (SourceId != tro.SourceId)
+                {
+                    tro.SourceId = SourceId;
+                }
+
+                if (CompletionStatus != tro.CompletionStatus)
+                {
+                    tro.CompletionStatus = CompletionStatus;
+                }
+
+                if (UserScore != tro.UserScore)
+                {
+                    tro.UserScore = UserScore;
+                }
+
+                if (CriticScore != tro.CriticScore)
+                {
+                    tro.CriticScore = CriticScore;
+                }
+
+                if (CommunityScore != tro.CommunityScore)
+                {
+                    tro.CommunityScore = CommunityScore;
+                }
+
+                if (!string.Equals(PreScript, tro.PreScript, StringComparison.Ordinal))
+                {
+                    tro.PreScript = PreScript;
+                }
+
+                if (!string.Equals(PostScript, tro.PostScript, StringComparison.Ordinal))
+                {
+                    tro.PostScript = PostScript;
+                }
+
+                if (ActionsScriptLanguage != tro.ActionsScriptLanguage)
+                {
+                    tro.ActionsScriptLanguage = ActionsScriptLanguage;
+                }
+            }
+            else
+            {
+                throw new ArgumentException($"Target object has to be of type {GetType().Name}");
+            }
         }
     }
 }

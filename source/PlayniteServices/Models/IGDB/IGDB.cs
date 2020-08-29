@@ -1,9 +1,10 @@
-﻿using LiteDB;
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using SdkModels = Playnite.SDK.Models;
 
 namespace PlayniteServices.Models.IGDB
 {
@@ -22,9 +23,9 @@ namespace PlayniteServices.Models.IGDB
         Android = 12,
         Steam = 13,
         Reddit = 14,
-        Discord = 15,
-        GooglePlus = 16,
-        Tumblr = 17,
+        Itch = 15,
+        Epic = 16,
+        GOG = 17,
         LinkedIn = 18,
         Pinterest = 19,
         SoundCloud = 20,
@@ -82,14 +83,6 @@ namespace PlayniteServices.Models.IGDB
         OperatingSystem = 4,
         PortableConsole = 5,
         Computer = 6,
-    }
-
-    public class SteamIdGame
-    {
-        [BsonId(false)]
-        public ulong steamId { get; set; }
-        public ulong igdbId { get; set; }
-        public DateTime creation_time { get; set; }
     }
 
     public class Website : IgdbItem
@@ -174,7 +167,6 @@ namespace PlayniteServices.Models.IGDB
 
     public class ProductFamily : IgdbItem
     {
-
     }
 
     public class GameMode : IgdbItem
@@ -196,6 +188,10 @@ namespace PlayniteServices.Models.IGDB
     }
 
     public class Genre : IgdbItem
+    {
+    }
+
+    public class PlayerPerspective : IgdbItem
     {
     }
 
@@ -238,6 +234,7 @@ namespace PlayniteServices.Models.IGDB
         public new List<Video> videos { get; set; }
         public new List<Platform> platforms { get; set; }
         public new List<ReleaseDate> release_dates { get; set; }
+        public new List<PlayerPerspective> player_perspectives { get; set; }
 
         // fallback properties for 4.x
         public new string cover { get; set; }
@@ -275,5 +272,18 @@ namespace PlayniteServices.Models.IGDB
         public List<ulong> videos { get; set; }
         public List<ulong> platforms { get; set; }
         public List<ulong> release_dates { get; set; }
+        public List<ulong> age_ratings { get; set; }
+        public List<ulong> similar_games { get; set; }
+        public List<ulong> player_perspectives { get; set; }
+        public ulong parent_game { get; set; }
+    }
+
+    public static class ModelsUtils
+    {
+        public static string GetIgdbSearchString(string gameName)
+        {
+            var temp = gameName.Replace(":", " ").Replace("-", " ").ToLower().Trim();
+            return Regex.Replace(temp, @"\s+", " ");
+        }
     }
 }

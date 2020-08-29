@@ -22,6 +22,8 @@ using Playnite.Common;
 using System.ComponentModel;
 using Playnite.Windows;
 using Polly;
+using System.Windows.Media;
+using Playnite.SDK.Events;
 
 namespace Playnite
 {
@@ -34,6 +36,7 @@ namespace Playnite
         private PipeService pipeService;
         private PipeServer pipeServer;
         private XInputDevice xdevice;
+        private System.Threading.Timer updateCheckTimer;
 
         private bool isActive;
         public bool IsActive
@@ -60,6 +63,8 @@ namespace Playnite
         public PlayniteAPI Api { get; set; }
         public GameControllerFactory Controllers { get; set; }
         public CmdLineOptions CmdLine { get; set; }
+        public DpiScale DpiScale { get; set; } = new DpiScale(1, 1);
+        public ComputerScreen CurrentScreen { get; set; } = Computer.GetPrimaryScreen();
 
         public static Application CurrentNative { get; private set; }
         public static PlayniteApplication Current { get; private set; }
@@ -108,6 +113,31 @@ namespace Playnite
                 Name = defaultThemeName
             };
 
+            try
+            {
+                var installed = ExtensionInstaller.InstallExtensionQueue();
+                var installedTheme = installed.FirstOrDefault(a => a is ThemeDescription);
+                if (installedTheme != null)
+                {
+                    var theme = installedTheme as ThemeDescription;
+                    if (theme.Mode == Mode)
+                    {
+                        if (theme.Mode == ApplicationMode.Desktop)
+                        {
+                            AppSettings.Theme = theme.DirectoryName;
+                        }
+                        else
+                        {
+                            AppSettings.Fullscreen.Theme = theme.DirectoryName;
+                        }
+                    }
+                }
+            }
+            catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
+            {
+                logger.Error(e, "Failed to finish installing extenions.");
+            }
+
             ThemeManager.SetDefaultTheme(defaultTheme);
 
             // Theme must be set BEFORE default app resources are initialized for ThemeFile markup to apply custom theme's paths.
@@ -142,6 +172,7 @@ namespace Playnite
                 if (!ThemeManager.ApplyTheme(CurrentNative, customTheme, Mode))
                 {
                     ThemeManager.SetCurrentTheme(null);
+                    logger.Error($"Failed to load theme {customTheme.Name}.");
                 }
             }
 
@@ -152,6 +183,62 @@ namespace Playnite
             catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
             {
                 logger.Error(exc, $"Failed to set {AppSettings.Language} langauge.");
+            }
+
+            if (mode == ApplicationMode.Desktop)
+            {
+                try
+                {
+                    if (System.Drawing.FontFamily.Families.Any(a => a.Name == AppSettings.FontFamilyName))
+                    {
+                        CurrentNative.Resources.Add(
+                            "FontFamily", new FontFamily(AppSettings.FontFamilyName));
+                    }
+                    else
+                    {
+                        logger.Error($"Cannot set font {AppSettings.FontFamilyName}, font not found.");
+                    }
+
+                    if (AppSettings.FontSize > 0)
+                    {
+                        CurrentNative.Resources.Add(
+                            "FontSize", AppSettings.FontSize);
+                    }
+
+                    if (AppSettings.FontSizeSmall > 0)
+                    {
+                        CurrentNative.Resources.Add(
+                            "FontSizeSmall", AppSettings.FontSizeSmall);
+                    }
+
+                    if (AppSettings.FontSizeLarge > 0)
+                    {
+                        CurrentNative.Resources.Add(
+                            "FontSizeLarge", AppSettings.FontSizeLarge);
+                    }
+
+                    if (AppSettings.FontSizeLarger > 0)
+                    {
+                        CurrentNative.Resources.Add(
+                            "FontSizeLarger", AppSettings.FontSizeLarger);
+                    }
+
+                    if (AppSettings.FontSizeLargest > 0)
+                    {
+                        CurrentNative.Resources.Add(
+                            "FontSizeLargest", AppSettings.FontSizeLargest);
+                    }
+                }
+                catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
+                {
+                    logger.Error(e, $"Failed to set font {AppSettings.FontFamilyName}");
+                }
+            }
+
+            // Only use this for Desktop mode. Non-default options look terrible in Fullscreen because of viewport scaling.
+            if (mode == ApplicationMode.Desktop)
+            {
+                Controls.WindowBase.SetTextRenderingOptions(AppSettings.TextFormattingMode, AppSettings.TextRenderingMode);
             }
         }
 
@@ -168,7 +255,10 @@ namespace Playnite
         private void Application_SessionEnding(object sender, SessionEndingCancelEventArgs e)
         {
             logger.Info("Shutting down application because of session ending.");
-            Quit();
+            // Don't dispose CefSharp here because of bug in CefSharp during system shutdown
+            // https://github.com/JosefNemec/Playnite/issues/866
+            ReleaseResources(false);
+            CurrentNative.Shutdown(0);
         }
 
         private void Application_Exit(object sender, ExitEventArgs e)
@@ -180,7 +270,7 @@ namespace Playnite
         private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
             var exception = (Exception)e.ExceptionObject;
-            logger.Error(exception, "Unhandled exception occured.");            
+            logger.Error(exception, "Unhandled exception occured.");
             var model = new CrashHandlerViewModel(
                 new CrashHandlerWindowFactory(),
                 Dialogs,
@@ -193,7 +283,7 @@ namespace Playnite
 
         private void Application_Startup(object sender, StartupEventArgs e)
         {
-            logger.Info($"Application started from '{PlaynitePaths.ProgramPath}', with '{string.Join(",", e.Args)}' arguments.");            
+            logger.Info($"Application started from '{PlaynitePaths.ProgramPath}', with '{string.Join(",", e.Args)}' arguments.");
             Startup();
             logger.Info($"Application {CurrentVersion} started");
         }
@@ -226,6 +316,10 @@ namespace Playnite
                         logger.Error($"Can't start game, failed to parse game id: {args.Args}");
                     }
 
+                    break;
+
+                case CmdlineCommand.UriRequest:
+                    (Api.UriHandler as PlayniteUriHandler).ProcessUri(args.Args);
                     break;
 
                 default:
@@ -266,6 +360,10 @@ namespace Playnite
                             {
                                 client.InvokeCommand(CmdlineCommand.Start, CmdLine.Start);
                             }
+                            else if (!CmdLine.UriData.IsNullOrEmpty())
+                            {
+                                client.InvokeCommand(CmdlineCommand.UriRequest, CmdLine.UriData);
+                            }
                             else
                             {
                                 client.InvokeCommand(CmdlineCommand.Focus, string.Empty);
@@ -289,7 +387,7 @@ namespace Playnite
             {
                 var curProcess = Process.GetCurrentProcess();
                 var processes = Process.GetProcessesByName(curProcess.ProcessName);
-                if (processes.Count() > 1 && processes.OrderBy(a => a.StartTime).First().Id != curProcess.Id)
+                if (processes.Count() > 1)
                 {
                     logger.Info("Another faster instance is already running, shutting down.");
                     resourcesReleased = true;
@@ -355,25 +453,66 @@ namespace Playnite
             {
                 logger.Error(exc, "Failed to register Playnite to start on boot.");
             }
+
+            try
+            {
+                PlayniteSettings.RegisterPlayniteUriProtocol();
+            }
+            catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
+            {
+                logger.Error(exc, "Failed to register playnite URI scheme.");
+            }
         }
 
         public void ProcessArguments()
         {
+            (Api.UriHandler as PlayniteUriHandler).Handlers.Add("playnite", ProcessUriRequest);
             if (!CmdLine.Start.IsNullOrEmpty())
             {
                 PipeService_CommandExecuted(this, new CommandExecutedEventArgs(CmdlineCommand.Start, CmdLine.Start));
             }
+            else if (!CmdLine.UriData.IsNullOrEmpty())
+            {
+                PipeService_CommandExecuted(this, new CommandExecutedEventArgs(CmdlineCommand.UriRequest, CmdLine.UriData));
+            }
+        }
+
+        internal void ProcessUriRequest(PlayniteUriEventArgs args)
+        {
+            var arguments = args.Arguments;
+            if (arguments.Count() == 2 && arguments[0].Equals("start", StringComparison.OrdinalIgnoreCase))
+            {
+                if (Guid.TryParse(arguments[1], out var gameId))
+                {
+                    var game = Database.Games[gameId];
+                    if (game != null)
+                    {
+                        GamesEditor.PlayGame(game);
+                        return;
+                    }
+                }
+            }
+
+            logger.Warn($"Failed to process playnite URI arguments {string.Join(",", arguments)}");
         }
 
         public void SetupInputs(bool enableXinput)
         {
             if (enableXinput)
             {
-                xdevice = new XInputDevice(InputManager.Current, this)
+                try
                 {
-                    SimulateAllKeys = false,
-                    SimulateNavigationKeys = true
-                };
+                    xdevice = new XInputDevice(InputManager.Current, this)
+                    {
+                        SimulateAllKeys = false,
+                        SimulateNavigationKeys = true
+                    };
+                }
+                catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
+                {
+                    logger.Error(e, "Failed intitialize XInput");
+                    Dialogs.ShowErrorMessage(ResourceProvider.GetString("LOCXInputInitErrorMessage"), "");
+                }
             }
         }
 
@@ -388,7 +527,7 @@ namespace Playnite
 
         public abstract void Restart(CmdLineOptions options);
 
-        public virtual void ReleaseResources()
+        public virtual void ReleaseResources(bool releaseCefSharp = true)
         {
             logger.Debug("Releasing Playnite resources...");
             if (resourcesReleased)
@@ -396,6 +535,8 @@ namespace Playnite
                 return;
             }
 
+            updateCheckTimer?.Dispose();
+            Extensions?.NotifiyOnApplicationStopped();
             var progressModel = new ProgressViewViewModel(new ProgressWindowFactory(), () =>
             {
                 try
@@ -407,8 +548,8 @@ namespace Playnite
 
                     GamesEditor?.Dispose();
                     AppSettings?.SaveSettings();
-                    Extensions?.Dispose();
                     Controllers?.Dispose();
+                    Extensions?.Dispose();
                 }
                 catch (Exception exc) when (!PlayniteEnvironment.ThrowAllErrors)
                 {
@@ -419,77 +560,83 @@ namespace Playnite
             progressModel.ActivateProgress();
 
             // This must run on main thread
-            CurrentNative.Dispatcher.Invoke(() =>
+            if (releaseCefSharp)
             {
-                if (CefTools.IsInitialized)
+                CurrentNative.Dispatcher.Invoke(() =>
                 {
-                    CefTools.Shutdown();
-                }
-            });
+                    if (CefTools.IsInitialized)
+                    {
+                        CefTools.Shutdown();
+                    }
+                });
+            }
 
             resourcesReleased = true;
         }
 
-        public async void StartUpdateCheckerAsync()
+        private void UpdateCheckerCallback(object state)
+        {
+            try
+            {
+                var updater = new Updater(this);
+                if (updater.IsUpdateAvailable)
+                {
+                    var updateTitle = ResourceProvider.GetString("LOCUpdaterWindowTitle");
+                    var updateBody = ResourceProvider.GetString("LOCUpdateIsAvailableNotificationBody");
+                    if (!Current.IsActive)
+                    {
+                        ShowWindowsNotification(updateTitle, updateBody, () =>
+                        {
+                            Restore();
+                            new UpdateViewModel(
+                                updater,
+                                new UpdateWindowFactory(),
+                                new ResourceProvider(),
+                                Dialogs).OpenView();
+                        });
+                    }
+
+                    Api.Notifications.Add(
+                        new NotificationMessage("UpdateAvailable",
+                        updateBody,
+                        NotificationType.Info, () =>
+                        {
+                            new UpdateViewModel(
+                                updater,
+                                new UpdateWindowFactory(),
+                                new ResourceProvider(),
+                                Dialogs).OpenView();
+                        }));
+                    updateCheckTimer.Dispose();
+                }
+            }
+            catch (Exception exc)
+            {
+                logger.Warn(exc, "Failed to process update.");
+            }
+        }
+
+        public async Task StartUpdateCheckerAsync()
         {
             if (PlayniteEnvironment.InOfflineMode)
             {
                 return;
             }
-            
+
             await Task.Delay(Common.Timer.SecondsToMilliseconds(5));
             if (GlobalTaskHandler.IsActive)
             {
                 await GlobalTaskHandler.ProgressTask;
             }
 
-            var updater = new Updater(this);
-
-            while (true)
-            {
-                try
-                {
-                    if (updater.IsUpdateAvailable)
-                    {
-                        var updateTitle = ResourceProvider.GetString("LOCUpdaterWindowTitle");
-                        var updateBody = ResourceProvider.GetString("LOCUpdateIsAvailableNotificationBody");
-                        if (!Current.IsActive)
-                        {
-                            ShowWindowsNotification(updateTitle, updateBody, () =>
-                            {
-                                Restore();
-                                new UpdateViewModel(
-                                    updater,
-                                    new UpdateWindowFactory(),
-                                    new ResourceProvider(),
-                                    Dialogs).OpenView();
-                            });
-                        }
-
-                        Api.Notifications.Add(
-                            new NotificationMessage("UpdateAvailable",
-                            updateBody,
-                            NotificationType.Info, () =>
-                            {
-                                new UpdateViewModel(
-                                    updater,
-                                    new UpdateWindowFactory(),
-                                    new ResourceProvider(),
-                                    Dialogs).OpenView();
-                            }));
-                        return;
-                    }
-                }
-                catch (Exception exc)
-                {
-                    logger.Warn(exc, "Failed to process update.");
-                }
-
-                await Task.Delay(Common.Timer.HoursToMilliseconds(4));
-            }
+            updateCheckTimer = new System.Threading.Timer(
+                UpdateCheckerCallback,
+                null,
+                0,
+                Common.Timer.HoursToMilliseconds(4));
         }
 
-        public async void SendUsageDataAsync()
+        public async Task SendUsageDataAsync()
         {
             if (PlayniteEnvironment.InOfflineMode)
             {
@@ -616,6 +763,21 @@ namespace Playnite
             }
 
             return true;
+        }
+
+        public void UpdateScreenInformation(Controls.WindowBase window)
+        {
+            try
+            {
+                DpiScale = VisualTreeHelper.GetDpi(window);
+                CurrentScreen = window.GetScreen();
+            }
+            catch (Exception e) when (!PlayniteEnvironment.ThrowAllErrors)
+            {
+                DpiScale = new DpiScale(1, 1);
+                CurrentScreen = Computer.GetPrimaryScreen();
+                logger.Error(e, $"Failed to get window information for main {Mode} window.");
+            }
         }
     }
 }

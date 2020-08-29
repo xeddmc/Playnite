@@ -1,7 +1,10 @@
 ﻿using NUnit.Framework;
+using Playnite.Common;
 using Playnite.Scripting.PowerShell;
+using Playnite.SDK.Exceptions;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Management.Automation;
 using System.Text;
@@ -59,8 +62,8 @@ function TestFunc()
         {
             using (var ps = new PowerShellRuntime())
             {
-                Assert.Throws<RuntimeException>(() => ps.Execute("throw \"Testing Exception\""));
-                Assert.Throws<RuntimeException>(() => ps.Execute("1 / 0"));
+                Assert.Throws<ScriptRuntimeException>(() => ps.Execute("throw \"Testing Exception\""));
+                Assert.Throws<ScriptRuntimeException>(() => ps.Execute("1 / 0"));
             }
         }
 
@@ -77,6 +80,26 @@ function TestFunc()
 }
 ");
                 Assert.IsTrue(ps.GetFunctionExits("TestFunc"));
+            }
+        }
+
+        [Test]
+        public void ExecuteWorkDirTest()
+        {
+            using (var tempDir = TempDirectory.Create())
+            using (var runtime = new PowerShellRuntime())
+            {
+                var outPath = "workDirTest.txt";
+                FileSystem.DeleteFile(outPath);
+                FileAssert.DoesNotExist(outPath);
+                runtime.Execute($"'test' | Out-File workDirTest.txt");
+                FileAssert.Exists(outPath);
+
+                outPath = Path.Combine(tempDir.TempPath, outPath);
+                FileSystem.DeleteFile(outPath);
+                FileAssert.DoesNotExist(outPath);
+                runtime.Execute($"'test' | Out-File workDirTest.txt", tempDir.TempPath);
+                FileAssert.Exists(outPath);
             }
         }
     }

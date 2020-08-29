@@ -1,0 +1,8 @@
+Name: PowerShell Extension
+Author: John Doe
+Version: 1.0
+Module: PowerShellScript.ps1
+Type: Script
+Functions: 
+    - Description: MenuFunction
+      FunctionName: MenuFunctionDescription

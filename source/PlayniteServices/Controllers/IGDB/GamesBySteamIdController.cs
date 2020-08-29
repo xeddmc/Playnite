@@ -7,25 +7,27 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using LiteDB;
+using PlayniteServices.Filters;
+using PlayniteServices.Databases;
 
 namespace PlayniteServices.Controllers.IGDB
 {
+    [ServiceFilter(typeof(PlayniteVersionFilter))]
     [Route("igdb/gamesBySteamId")]
     public class GamesBySteamIdController : Controller
     {
-        private const string cacheDir = "steam_ids";
-
-        public const string DbCollectionName = "IGBDSteamIdCache";
-
-        private static LiteCollection<SteamIdGame> cacheCollection = Program.Database.GetCollection<SteamIdGame>(DbCollectionName);
-
         [HttpGet("{gameId}")]
         public async Task<ServicesResponse<ulong>> Get(ulong gameId)
         {
-            var cache = cacheCollection.FindById(gameId);
+            return new ServicesResponse<ulong>(await GetIgdbMatch(gameId));
+        }
+
+        public static async Task<ulong> GetIgdbMatch(ulong gameId)
+        {
+            var cache = Database.SteamIgdbMatches.FindById(gameId);
             if (cache != null)
             {
-                return new ServicesResponse<ulong>(cache.igdbId);
+                return cache.igdbId;
             }
 
             var libraryStringResult = await IGDB.SendStringRequest("games",
@@ -33,18 +35,17 @@ namespace PlayniteServices.Controllers.IGDB
             var games = JsonConvert.DeserializeObject<List<Game>>(libraryStringResult);
             if (games.Any())
             {
-                cacheCollection.Upsert(new SteamIdGame()
+                Database.SteamIgdbMatches.Upsert(new SteamIdGame()
                 {
                     steamId = gameId,
-                    igdbId = games.First().id,
-                    creation_time = DateTime.Now
+                    igdbId = games.First().id
                 });
 
-                return new ServicesResponse<ulong>(games.First().id);
+                return games.First().id;
             }
             else
             {
-                return new ServicesResponse<ulong>(0);
+                return 0;
             }
         }
     }
